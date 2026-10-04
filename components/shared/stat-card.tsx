@@ -33,36 +33,41 @@ export function StatCard({
   className,
 }: StatCardProps) {
   return (
-    <Card className={cn("overflow-hidden transition-all hover:border-zinc-300/80", className)}>
-      <CardContent className="p-5">
+    <Card
+      className={cn(
+        "overflow-hidden rounded-xl border border-zinc-200/80 bg-white transition-all hover:border-zinc-300 hover:shadow-xs",
+        className
+      )}
+    >
+      <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span
-              className={cn("h-2 w-2 rounded-full", accentDotMap[accentColor])}
+              className={cn("h-2 w-2 shrink-0 rounded-full", accentDotMap[accentColor])}
               aria-hidden="true"
             />
-            <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
               {title}
             </span>
           </div>
           {Icon && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500 border border-zinc-100">
-              <Icon className="h-4 w-4" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-50 text-zinc-500 border border-zinc-200/60">
+              <Icon className="h-3.5 w-3.5" />
             </div>
           )}
         </div>
 
-        <div className="mt-3 flex items-baseline justify-between">
+        <div className="mt-2.5 flex items-baseline justify-between gap-2">
           <div className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900">
             {value}
           </div>
           {change && (
             <span
               className={cn(
-                "text-xs font-medium",
-                changeType === "positive" && "text-emerald-600",
-                changeType === "negative" && "text-rose-600",
-                changeType === "neutral" && "text-zinc-500"
+                "text-xs font-semibold shrink-0",
+                changeType === "positive" && "text-emerald-700",
+                changeType === "negative" && "text-rose-700",
+                changeType === "neutral" && "text-zinc-600"
               )}
             >
               {change}
@@ -71,7 +76,7 @@ export function StatCard({
         </div>
 
         {subtitle && (
-          <p className="mt-1 text-xs text-zinc-500 line-clamp-1">{subtitle}</p>
+          <p className="mt-1 text-xs text-zinc-600 line-clamp-1">{subtitle}</p>
         )}
       </CardContent>
     </Card>

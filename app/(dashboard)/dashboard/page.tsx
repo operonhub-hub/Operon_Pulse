@@ -454,10 +454,11 @@ export default async function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-y border-stone-100 bg-stone-50/70 text-[11px] font-semibold text-stone-500 dark:border-stone-800 dark:bg-stone-900/50 dark:text-stone-400 uppercase tracking-wider">
+                <tr className="border-y border-stone-100 bg-stone-50/70 text-[11px] font-semibold text-stone-600 dark:border-stone-800 dark:bg-stone-900/50 dark:text-stone-400 uppercase tracking-wider">
                   <th className="px-5 py-3">Task</th>
                   <th className="px-4 py-3">Goal</th>
                   <th className="px-4 py-3">Assignee</th>
@@ -474,12 +475,12 @@ export default async function DashboardPage() {
                       key={task.id}
                       className="group transition-colors hover:bg-stone-50/70 dark:hover:bg-stone-800/30"
                     >
-                      <td className="px-5 py-3.5 font-medium text-stone-900 dark:text-stone-100 max-w-xs truncate">
+                      <td className="px-5 py-3.5 font-semibold text-stone-900 dark:text-stone-100 max-w-xs truncate">
                         {task.title}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         {task.goal ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                          <span className="inline-flex items-center gap-1 text-[10px] text-amber-800 dark:text-amber-400 font-medium">
                             <Target className="h-2.5 w-2.5" />
                             <span className="max-w-[110px] truncate">{task.goal.title}</span>
                           </span>
@@ -487,7 +488,7 @@ export default async function DashboardPage() {
                           <span className="text-stone-400">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap text-stone-600 dark:text-stone-400">
+                      <td className="px-4 py-3.5 whitespace-nowrap text-stone-700 dark:text-stone-300">
                         {task.owner?.full_name || task.owner?.email || "Unassigned"}
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap">
@@ -509,25 +510,76 @@ export default async function DashboardPage() {
                                 : "bg-stone-800 dark:bg-amber-500"
                             }
                           />
-                          <span className="text-[11px] font-medium text-stone-500">
+                          <span className="text-[11px] font-semibold text-stone-600 dark:text-stone-400">
                             {task.progress}%
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap text-stone-500">
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap text-stone-600 dark:text-stone-400">
                         {task.due_date || "—"}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-5 py-6 text-center text-stone-400">
+                    <td colSpan={7} className="px-5 py-6 text-center text-stone-500">
                       No tasks found for this week. Click &quot;Add Task&quot; above to create one.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="block md:hidden divide-y divide-stone-100 dark:divide-stone-800">
+            {hasLiveTasks ? (
+              liveTasks.slice(0, 5).map((task) => (
+                <div key={task.id} className="p-4 space-y-2.5 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <PriorityBadge priority={priorityDisplayMap[task.priority]} />
+                        <StatusBadge status={statusDisplayMap[task.status]} />
+                        {task.goal && (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 border border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-400">
+                            <Target className="h-2.5 w-2.5 text-amber-600" />
+                            <span className="max-w-[120px] truncate">{task.goal.title}</span>
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-semibold text-stone-900 dark:text-stone-100 pt-0.5">
+                        {task.title}
+                      </h4>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-stone-500">
+                      <span>Progress</span>
+                      <span className="font-semibold text-stone-700 dark:text-stone-300">{task.progress}%</span>
+                    </div>
+                    <Progress value={task.progress} className="h-1.5" />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 text-[11px] text-stone-500 dark:text-stone-400 border-t border-stone-100 dark:border-stone-800">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-400">
+                        {task.owner?.full_name ? task.owner.full_name.charAt(0).toUpperCase() : "U"}
+                      </div>
+                      <span className="font-medium text-stone-700 dark:text-stone-300">
+                        {task.owner?.full_name || task.owner?.email || "Unassigned"}
+                      </span>
+                    </div>
+                    {task.due_date && <span>Due: {task.due_date}</span>}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-6 text-center text-xs text-stone-500">
+                No tasks found for this week. Click &quot;Add Task&quot; above to create one.
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

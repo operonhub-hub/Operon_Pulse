@@ -17,7 +17,7 @@ export default async function DashboardLayout({
   ]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="min-h-[100dvh] bg-background text-foreground flex flex-col md:flex-row">
       {/* Real-time cross-tab session synchronizer */}
       <AuthSessionSync
         currentUserId={session.user?.id || null}

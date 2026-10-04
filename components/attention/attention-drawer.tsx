@@ -69,10 +69,10 @@ export function AttentionDrawer({
       />
 
       {/* Slide-over Panel */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-6 sm:pl-10">
+      <div className="fixed inset-y-0 right-0 flex max-w-full pl-0 sm:pl-10">
         <div
           ref={drawerRef}
-          className="w-screen max-w-md transform bg-white dark:bg-stone-900 shadow-2xl transition-all duration-300 flex flex-col border-l border-stone-200/80 dark:border-stone-800"
+          className="w-screen max-w-full sm:max-w-md transform bg-white dark:bg-stone-900 shadow-2xl transition-all duration-300 flex flex-col border-l border-stone-200/80 dark:border-stone-800"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-stone-200/80 dark:border-stone-800 px-5 py-4 bg-stone-50/60 dark:bg-stone-900/80">

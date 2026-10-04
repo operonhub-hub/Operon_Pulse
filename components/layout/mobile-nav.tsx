@@ -45,7 +45,7 @@ export function MobileNav({ user }: MobileNavProps) {
       {/* Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-xs transition-opacity md:hidden"
+          className="fixed inset-0 z-40 bg-zinc-950/40 backdrop-blur-xs transition-opacity md:hidden animate-in fade-in duration-200"
           onClick={() => setIsOpen(false)}
           aria-hidden="true"
         />
@@ -53,7 +53,10 @@ export function MobileNav({ user }: MobileNavProps) {
 
       {/* Slide-out Drawer */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-72 transform bg-white shadow-2xl transition-transform duration-200 ease-in-out md:hidden ${
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation drawer"
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[calc(100vw-3rem)] transform bg-white shadow-2xl transition-transform duration-200 ease-in-out md:hidden flex flex-col ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -63,8 +66,9 @@ export function MobileNav({ user }: MobileNavProps) {
             size="icon-sm"
             onClick={() => setIsOpen(false)}
             aria-label="Close navigation menu"
+            className="text-zinc-500 hover:text-zinc-900"
           >
-            <X className="h-5 w-5 text-zinc-500" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
         <Sidebar
