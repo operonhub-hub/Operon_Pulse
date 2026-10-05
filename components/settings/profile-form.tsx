@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { updateProfileAction, type AuthActionResult } from "@/lib/auth/actions";
 import { Profile, UserProfile } from "@/types";
+import { ChangePasswordCard } from "./change-password-card";
 
 interface ProfileFormProps {
   user: UserProfile;
@@ -158,6 +159,9 @@ export function ProfileForm({ user, profile }: ProfileFormProps) {
           </form>
         </CardContent>
       </Card>
+
+      {/* Security & Password Card */}
+      <ChangePasswordCard />
 
       {/* Workspace Information Card */}
       <Card className="border-zinc-200/80 bg-white shadow-xs">

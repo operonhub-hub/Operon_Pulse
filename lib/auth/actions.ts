@@ -2,11 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { requireActiveUser } from "@/lib/auth/guards";
 
 export interface AuthActionResult {
   success?: boolean;
+  error?: string;
+  message?: string;
+}
+
+export interface ChangePasswordResult {
+  success?: boolean;
+  message?: string;
   error?: string;
 }
 
@@ -145,4 +153,106 @@ export async function updateProfileAction(
   revalidatePath("/", "layout");
 
   return { success: true };
+}
+
+/**
+ * Server action to change password securely for the currently authenticated active user.
+ *
+ * Security requirements:
+ * 1. Enforces requireActiveUser() server-side (user must be authenticated & active).
+ * 2. Does NOT accept user_id, email, or role from the browser.
+ * 3. Verifies current password via a temporary isolated client before attempting password update.
+ * 4. Enforces validation rules (min 8 chars, mismatch check, new !== current).
+ * 5. Updates password via user's active session without forced logout.
+ * 6. Never logs passwords or sensitive credentials.
+ */
+export async function changePasswordAction(
+  prevState: ChangePasswordResult | null,
+  formData: FormData
+): Promise<ChangePasswordResult> {
+  try {
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { error: authResult.error || "Authentication required. Please sign in." };
+    }
+
+    const { supabase, user } = authResult.data;
+
+    const currentPassword = (formData.get("currentPassword") as string) || "";
+    const newPassword = (formData.get("newPassword") as string) || "";
+    const confirmPassword = (formData.get("confirmPassword") as string) || "";
+
+    // 1. Basic presence checks
+    if (!currentPassword) {
+      return { error: "Please enter your current password." };
+    }
+
+    if (!newPassword) {
+      return { error: "Please enter a new password." };
+    }
+
+    // 2. Length checks
+    if (newPassword.length < 8) {
+      return { error: "New password must be at least 8 characters." };
+    }
+
+    if (newPassword.length > 72) {
+      return { error: "New password cannot exceed 72 characters." };
+    }
+
+    // 3. Confirmation match check
+    if (newPassword !== confirmPassword) {
+      return { error: "New passwords do not match." };
+    }
+
+    // 4. Same as current password check
+    if (currentPassword === newPassword) {
+      return { error: "Your new password must be different from your current password." };
+    }
+
+    // 5. Current password verification via isolated temporary client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { error: "Supabase authentication service is not configured." };
+    }
+
+    const verifyClient = createSupabaseJsClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+    const { error: verifyError } = await verifyClient.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+
+    if (verifyError) {
+      return { error: "Current password is incorrect." };
+    }
+
+    // 6. Update user's password using the active authenticated session client
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (updateError) {
+      return { error: updateError.message || "Failed to update password." };
+    }
+
+    revalidatePath("/settings");
+    revalidatePath("/", "layout");
+
+    return {
+      success: true,
+      message: "Password changed successfully.",
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "An unexpected error occurred.";
+    return { error: message };
+  }
 }
