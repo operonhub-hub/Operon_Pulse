@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { requireActiveUser } from "@/lib/auth/guards";
 import { TaskPriority, TaskStatus } from "@/types";
 
 export interface TaskActionResult {
@@ -32,19 +32,12 @@ export interface TaskFormPayload {
 export async function createTaskAction(
   payload: TaskFormPayload
 ): Promise<TaskActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available. Please check environment variables." };
+  const authResult = await requireActiveUser();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Authentication required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to create a task." };
-  }
+  const { supabase, user, isAdmin } = authResult.data;
 
   // Validate Title
   const title = (payload.title || "").trim();
@@ -60,15 +53,6 @@ export async function createTaskAction(
   if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
     return { error: "Valid week start date (YYYY-MM-DD) is required." };
   }
-
-  // Validate User Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isAdmin = profile?.role === "ADMIN";
 
   // Ownership: Members must own their tasks; Admins may assign to others
   const ownerId = isAdmin && payload.owner_id ? payload.owner_id : user.id;
@@ -126,19 +110,12 @@ export async function updateTaskAction(
   taskId: string,
   payload: TaskFormPayload
 ): Promise<TaskActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveUser();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Authentication required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to update a task." };
-  }
+  const { supabase, user, isAdmin } = authResult.data;
 
   if (!taskId) {
     return { error: "Task ID is required for update." };
@@ -149,15 +126,6 @@ export async function updateTaskAction(
   if (!title) {
     return { error: "Task title cannot be empty." };
   }
-
-  // Validate User Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isAdmin = profile?.role === "ADMIN";
 
   // Check existing task ownership
   const { data: existingTask, error: fetchError } = await supabase
@@ -234,32 +202,16 @@ export async function updateTaskStatusAction(
   blockerReason?: string | null,
   newProgress?: number
 ): Promise<TaskActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveUser();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Authentication required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to update a task status." };
-  }
+  const { supabase, user, isAdmin } = authResult.data;
 
   if (!taskId) {
     return { error: "Task ID is required." };
   }
-
-  // Validate User Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isAdmin = profile?.role === "ADMIN";
 
   // Check existing task ownership
   const { data: existingTask, error: fetchError } = await supabase
@@ -322,32 +274,16 @@ export async function updateTaskStatusAction(
  * Server action to delete a task
  */
 export async function deleteTaskAction(taskId: string): Promise<TaskActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveUser();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Authentication required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to delete a task." };
-  }
+  const { supabase, user, isAdmin } = authResult.data;
 
   if (!taskId) {
     return { error: "Task ID is required." };
   }
-
-  // Check user role and task ownership
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const isAdmin = profile?.role === "ADMIN";
 
   const { data: existingTask } = await supabase
     .from("tasks")

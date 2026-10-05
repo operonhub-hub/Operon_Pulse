@@ -106,11 +106,12 @@ export async function getTeamCheckinStatus(
   weekStart: string,
   teamMembers: Profile[]
 ): Promise<TeamMemberCheckinStatus[]> {
+  const activeMembers = teamMembers.filter((m) => m.is_active !== false);
   const checkins = await getAllWeeklyCheckins(weekStart);
   const checkinMap = new Map<string, WeeklyCheckin>();
   checkins.forEach((c) => checkinMap.set(c.user_id, c));
 
-  return teamMembers.map((member) => ({
+  return activeMembers.map((member) => ({
     profile: member,
     hasSubmitted: checkinMap.has(member.id),
     checkin: checkinMap.get(member.id) || null,
@@ -137,7 +138,7 @@ export async function getWeeklyReviewData(
     getTasksForWeek(weekStart),
     getGoalsWithTaskSummary(weekStart),
     getTaskReviewOutcomes(weekStart),
-    getTeamMembersList(),
+    getTeamMembersList({ activeOnly: true }),
   ]);
 
   // Attach review outcomes to tasks

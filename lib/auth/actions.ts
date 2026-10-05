@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { requireActiveUser } from "@/lib/auth/guards";
 
 export interface AuthActionResult {
   success?: boolean;
@@ -33,7 +34,7 @@ export async function loginAction(
   }
 
   try {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
@@ -45,6 +46,14 @@ export async function loginAction(
       if (error.message.toLowerCase().includes("email not confirmed")) {
         return { error: "Your email address has not been confirmed yet." };
       }
+      if (
+        error.message.toLowerCase().includes("user is banned") ||
+        error.message.toLowerCase().includes("banned")
+      ) {
+        return {
+          error: "Your workspace access has been deactivated. Contact an administrator.",
+        };
+      }
       if (error.message.toLowerCase().includes("fetch failed")) {
         return {
           error:
@@ -52,6 +61,21 @@ export async function loginAction(
         };
       }
       return { error: error.message || "An error occurred during authentication." };
+    }
+
+    if (authData?.user) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_active")
+        .eq("id", authData.user.id)
+        .maybeSingle();
+
+      if (profile && profile.is_active === false) {
+        await supabase.auth.signOut();
+        return {
+          error: "Your workspace access has been deactivated. Contact an administrator.",
+        };
+      }
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -93,19 +117,12 @@ export async function updateProfileAction(
     return { error: "Full name cannot be empty." };
   }
 
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveUser();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Authentication required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to update your profile." };
-  }
+  const { supabase, user } = authResult.data;
 
   // Update profile record with least-privilege column grant (full_name only)
   const { error } = await supabase

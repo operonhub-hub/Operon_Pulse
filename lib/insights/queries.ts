@@ -215,8 +215,9 @@ export async function getInsightsDataset(
   const weeklyGoals = buildWeeklyGoalMetrics(goals, tasks, weeks);
   const weeklyCarryovers = buildWeeklyCarryoverMetrics(tasks, scopedReviews, weeks);
   const { weeklyBlockers, recurringBlockers } = buildWeeklyBlockerMetrics(tasks, weeks);
-  // Workload is strictly for ADMIN only (empty array for MEMBER)
-  const workload = isAdmin ? buildWorkloadMetrics(allRangeTasks, teamMembers) : [];
+  // Workload is strictly for ADMIN only (empty array for MEMBER), calculated for active team members
+  const activeMembers = teamMembers.filter((m) => m.is_active !== false);
+  const workload = isAdmin ? buildWorkloadMetrics(allRangeTasks, activeMembers) : [];
   const overviewStats = buildInsightsOverviewStats(weeklyTasks, weeklyGoals, weeklyCarryovers);
   const comparison = buildWeekOverWeekComparison(weeklyTasks, weeklyGoals, weeklyCarryovers, weeklyBlockers);
   const signals = generateInsightSignals(weeklyTasks, weeklyCarryovers, weeklyBlockers, recurringBlockers);

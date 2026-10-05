@@ -30,5 +30,11 @@ export default async function TeamPage() {
     teamProfiles = [session.profile as Profile];
   }
 
-  return <TeamView initialMembers={teamProfiles} isAdmin={isAdmin} />;
+  return (
+    <TeamView
+      initialMembers={teamProfiles}
+      isAdmin={isAdmin}
+      currentUserId={session.user.id}
+    />
+  );
 }

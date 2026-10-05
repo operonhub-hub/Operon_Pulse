@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { getCurrentUserSession } from "@/lib/auth/session";
+import { requireActiveUser } from "@/lib/auth/guards";
 import { getCurrentUserAttentionCenterData } from "./queries";
 
 /**
@@ -13,7 +12,7 @@ function isValidKey(key: unknown): key is string {
 }
 
 /**
- * Marks an individual active attention item as read for the authenticated user.
+ * Marks an individual active attention item as read for the authenticated active user.
  * Strictly verifies server-side that the attention key belongs to a currently active derived item.
  */
 export async function markAttentionReadAction(
@@ -24,10 +23,12 @@ export async function markAttentionReadAction(
       return { success: false, error: "Invalid attention key format" };
     }
 
-    const session = await getCurrentUserSession();
-    if (!session.user?.id) {
-      return { success: false, error: "Not authenticated" };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
+
+    const { supabase, user } = authResult.data;
 
     // Verify key belongs to a currently active derived attention item for this user
     const attentionData = await getCurrentUserAttentionCenterData();
@@ -37,16 +38,11 @@ export async function markAttentionReadAction(
       return { success: false, error: "Attention item is no longer active." };
     }
 
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database unavailable" };
-    }
-
     const now = new Date().toISOString();
 
     const { error } = await supabase.from("attention_states").upsert(
       {
-        user_id: session.user.id,
+        user_id: user.id,
         attention_key: attentionKey,
         read_at: now,
       },
@@ -77,7 +73,7 @@ export async function markAttentionReadAction(
 }
 
 /**
- * Marks all currently active attention items as read for the authenticated user.
+ * Marks all currently active attention items as read for the authenticated active user.
  * Derives active attention keys strictly server-side without trusting client arrays.
  */
 export async function markAllAttentionReadAction(): Promise<{
@@ -85,10 +81,12 @@ export async function markAllAttentionReadAction(): Promise<{
   error?: string;
 }> {
   try {
-    const session = await getCurrentUserSession();
-    if (!session.user?.id) {
-      return { success: false, error: "Not authenticated" };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
+
+    const { supabase, user } = authResult.data;
 
     // Derive active attention keys server-side
     const attentionData = await getCurrentUserAttentionCenterData();
@@ -100,15 +98,9 @@ export async function markAllAttentionReadAction(): Promise<{
       return { success: true };
     }
 
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database unavailable" };
-    }
-
-    const userId = session.user.id;
     const now = new Date().toISOString();
     const rows = unreadKeys.map((key) => ({
-      user_id: userId,
+      user_id: user.id,
       attention_key: key,
       read_at: now,
     }));
@@ -141,7 +133,7 @@ export async function markAllAttentionReadAction(): Promise<{
 }
 
 /**
- * Dismisses an informational attention item for the authenticated user.
+ * Dismisses an informational attention item for the authenticated active user.
  * Strictly verifies server-side that the item exists AND is marked dismissible.
  */
 export async function dismissAttentionAction(
@@ -152,10 +144,12 @@ export async function dismissAttentionAction(
       return { success: false, error: "Invalid attention key format" };
     }
 
-    const session = await getCurrentUserSession();
-    if (!session.user?.id) {
-      return { success: false, error: "Not authenticated" };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
+
+    const { supabase, user } = authResult.data;
 
     // Derive active attention items server-side
     const attentionData = await getCurrentUserAttentionCenterData();
@@ -173,16 +167,11 @@ export async function dismissAttentionAction(
       };
     }
 
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database unavailable" };
-    }
-
     const now = new Date().toISOString();
 
     const { error } = await supabase.from("attention_states").upsert(
       {
-        user_id: session.user.id,
+        user_id: user.id,
         attention_key: attentionKey,
         dismissed_at: now,
         read_at: now,

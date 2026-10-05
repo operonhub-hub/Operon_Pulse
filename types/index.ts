@@ -16,6 +16,7 @@ export interface Profile {
   email: string;
   role: UserRole;
   avatar_url: string | null;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -217,4 +218,5 @@ export interface UserProfile {
   initials: string;
   role: UserRole | string;
   workspaceName: string;
+  isActive?: boolean;
 }

@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireActiveAdmin } from "@/lib/auth/guards";
 import { UserRole } from "@/types";
+import { DEACTIVATION_BAN_DURATION, REACTIVATION_UNBAN_DURATION } from "./constants";
+
+export { DEACTIVATION_BAN_DURATION, REACTIVATION_UNBAN_DURATION };
 
 export interface CreateTeamMemberPayload {
   fullName: string;
@@ -24,48 +27,31 @@ export interface CreateTeamMemberResult {
   };
 }
 
+export interface DeactivateTeamMemberResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface ReactivateTeamMemberResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 /**
  * Server action for workspace ADMINs to create new team members directly.
- *
- * Security guarantees:
- * - Strictly checks that the caller is an authenticated user with ADMIN role.
- * - Uses the server-only Supabase Admin client with service role credentials.
- * - Never logs or persists the temporary password.
- * - Handles duplicate emails with clean user-facing error messages.
  */
 export async function createTeamMemberAction(
   payload: CreateTeamMemberPayload
 ): Promise<CreateTeamMemberResult> {
   try {
-    // 1. Authenticate caller using session client
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database client is unavailable." };
+    const authResult = await requireActiveAdmin();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
 
-    const {
-      data: { user: callerUser },
-    } = await supabase.auth.getUser();
-
-    if (!callerUser) {
-      return { success: false, error: "Authentication required. Please sign in." };
-    }
-
-    // 2. Verify caller has ADMIN role in profiles
-    const { data: callerProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", callerUser.id)
-      .single();
-
-    if (profileError || callerProfile?.role !== "ADMIN") {
-      return {
-        success: false,
-        error: "Permission denied: Only workspace administrators can add team members.",
-      };
-    }
-
-    // 3. Validate input payload
+    // Validate input payload
     const fullName = payload.fullName?.trim() || "";
     const email = payload.email?.trim().toLowerCase() || "";
     const password = payload.temporaryPassword || "";
@@ -88,7 +74,7 @@ export async function createTeamMemberAction(
       return { success: false, error: "Temporary password cannot exceed 72 characters." };
     }
 
-    // 4. Initialize privileged server-only admin client
+    // Initialize privileged server-only admin client
     const adminClient = createAdminClient();
     if (!adminClient) {
       return {
@@ -98,7 +84,7 @@ export async function createTeamMemberAction(
       };
     }
 
-    // 5. Create Auth user via Supabase Admin Auth API
+    // Create Auth user via Supabase Admin Auth API
     const { data: createdData, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -127,16 +113,14 @@ export async function createTeamMemberAction(
 
     const newUserId = createdData.user.id;
 
-    // 6. Role promotion if ADMIN was requested (on_auth_user_created trigger defaults to MEMBER)
+    // Role promotion if ADMIN was requested
     if (role === "ADMIN") {
-      // Small sleep to ensure the trigger created the profile row
       const { error: updateRoleError } = await adminClient
         .from("profiles")
         .update({ role: "ADMIN", updated_at: new Date().toISOString() })
         .eq("id", newUserId);
 
       if (updateRoleError) {
-        // Roll back the created auth user on role assignment failure
         await adminClient.auth.admin.deleteUser(newUserId);
         return {
           success: false,
@@ -145,12 +129,14 @@ export async function createTeamMemberAction(
       }
     }
 
-    // 7. Revalidate dashboard & team routes
+    // Revalidate dashboard & team routes
     revalidatePath("/team");
     revalidatePath("/dashboard");
     revalidatePath("/insights");
     revalidatePath("/my-tasks");
     revalidatePath("/team-board");
+    revalidatePath("/goals");
+    revalidatePath("/weekly-review");
 
     return {
       success: true,
@@ -161,6 +147,252 @@ export async function createTeamMemberAction(
         fullName,
         role,
       },
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "An unexpected server error occurred.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Server action for workspace ADMINs to safely deactivate a team member.
+ *
+ * Security guarantees:
+ * - Uses shared requireActiveAdmin() guard.
+ * - Prevents self-deactivation.
+ * - Prevents deactivating the last active workspace administrator.
+ * - Marks public.profiles.is_active = false.
+ * - Suspends Supabase Auth account using ban_duration: DEACTIVATION_BAN_DURATION.
+ * - Employs rollback on partial failure.
+ * - Preserves all historical records.
+ */
+export async function deactivateTeamMemberAction(
+  memberId: string
+): Promise<DeactivateTeamMemberResult> {
+  try {
+    if (!memberId || typeof memberId !== "string" || !memberId.trim()) {
+      return { success: false, error: "A valid team member ID is required." };
+    }
+
+    const authResult = await requireActiveAdmin();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
+    }
+
+    const callerId = authResult.data.user.id;
+
+    // Prevent self-deactivation
+    if (callerId === memberId) {
+      return {
+        success: false,
+        error: "You cannot deactivate your own administrator account.",
+      };
+    }
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      return {
+        success: false,
+        error:
+          "Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not configured. Please contact the administrator.",
+      };
+    }
+
+    // Check target profile
+    const { data: targetProfile, error: targetError } = await adminClient
+      .from("profiles")
+      .select("id, full_name, email, role, is_active")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    if (targetError || !targetProfile) {
+      return { success: false, error: "Team member not found." };
+    }
+
+    const displayName = targetProfile.full_name || targetProfile.email;
+
+    // Idempotent check
+    if (targetProfile.is_active === false) {
+      return {
+        success: true,
+        message: `${displayName} is already inactive.`,
+      };
+    }
+
+    // If target is ADMIN, verify they are not the last active administrator
+    if (targetProfile.role === "ADMIN") {
+      const { data: otherActiveAdmins, error: countError } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("role", "ADMIN")
+        .eq("is_active", true)
+        .neq("id", memberId);
+
+      if (countError || !otherActiveAdmins || otherActiveAdmins.length === 0) {
+        return {
+          success: false,
+          error: "Cannot deactivate the last active workspace administrator.",
+        };
+      }
+    }
+
+    // 1. Update profiles table: is_active = false
+    const { error: updateProfileError } = await adminClient
+      .from("profiles")
+      .update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", memberId);
+
+    if (updateProfileError) {
+      return {
+        success: false,
+        error: updateProfileError.message || "Failed to update profile status.",
+      };
+    }
+
+    // 2. Suspend user in Supabase Auth (100-year ban duration)
+    const { error: banError } = await adminClient.auth.admin.updateUserById(memberId, {
+      ban_duration: DEACTIVATION_BAN_DURATION,
+    });
+
+    if (banError) {
+      // Roll back profile update on auth suspension failure
+      await adminClient
+        .from("profiles")
+        .update({
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", memberId);
+
+      return {
+        success: false,
+        error: `Failed to suspend workspace account (${banError.message}). Changes were rolled back.`,
+      };
+    }
+
+    // Revalidate paths
+    revalidatePath("/team");
+    revalidatePath("/dashboard");
+    revalidatePath("/my-tasks");
+    revalidatePath("/team-board");
+    revalidatePath("/goals");
+    revalidatePath("/weekly-review");
+    revalidatePath("/insights");
+
+    return {
+      success: true,
+      message: `${displayName} has been deactivated.`,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "An unexpected server error occurred.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Server action for workspace ADMINs to safely reactivate an inactive team member.
+ *
+ * Security guarantees:
+ * - Uses shared requireActiveAdmin() guard.
+ * - Marks public.profiles.is_active = true.
+ * - Lifts Supabase Auth account ban using ban_duration: REACTIVATION_UNBAN_DURATION ('none').
+ * - Employs rollback on partial failure.
+ */
+export async function reactivateTeamMemberAction(
+  memberId: string
+): Promise<ReactivateTeamMemberResult> {
+  try {
+    if (!memberId || typeof memberId !== "string" || !memberId.trim()) {
+      return { success: false, error: "A valid team member ID is required." };
+    }
+
+    const authResult = await requireActiveAdmin();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
+    }
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      return {
+        success: false,
+        error:
+          "Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not configured. Please contact the administrator.",
+      };
+    }
+
+    // Check target profile
+    const { data: targetProfile, error: targetError } = await adminClient
+      .from("profiles")
+      .select("id, full_name, email, role, is_active")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    if (targetError || !targetProfile) {
+      return { success: false, error: "Team member not found." };
+    }
+
+    const displayName = targetProfile.full_name || targetProfile.email;
+
+    // Idempotent check
+    if (targetProfile.is_active === true) {
+      return {
+        success: true,
+        message: `${displayName} is already active.`,
+      };
+    }
+
+    // 1. Update profiles table: is_active = true
+    const { error: updateProfileError } = await adminClient
+      .from("profiles")
+      .update({
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", memberId);
+
+    if (updateProfileError) {
+      return {
+        success: false,
+        error: updateProfileError.message || "Failed to update profile status.",
+      };
+    }
+
+    // 2. Lift suspension in Supabase Auth (ban_duration: 'none')
+    const { error: unbanError } = await adminClient.auth.admin.updateUserById(memberId, {
+      ban_duration: REACTIVATION_UNBAN_DURATION,
+    });
+
+    if (unbanError) {
+      // Roll back profile update on auth unban failure
+      await adminClient
+        .from("profiles")
+        .update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", memberId);
+
+      return {
+        success: false,
+        error: `Failed to restore workspace access (${unbanError.message}). Changes were rolled back.`,
+      };
+    }
+
+    // Revalidate paths
+    revalidatePath("/team");
+    revalidatePath("/dashboard");
+    revalidatePath("/my-tasks");
+    revalidatePath("/team-board");
+    revalidatePath("/goals");
+    revalidatePath("/weekly-review");
+    revalidatePath("/insights");
+
+    return {
+      success: true,
+      message: `${displayName} has been reactivated.`,
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "An unexpected server error occurred.";

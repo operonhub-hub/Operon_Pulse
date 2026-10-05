@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { requireActiveUser } from "@/lib/auth/guards";
 import { TaskReviewOutcome } from "@/types";
 
 export interface CheckinPayload {
@@ -37,18 +37,12 @@ export async function saveWeeklyCheckinAction(
   payload: CheckinPayload
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database client is not available." };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "You must be signed in to submit a check-in." };
-    }
+    const { supabase, user } = authResult.data;
 
     if (!payload.weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(payload.weekStart)) {
       return { success: false, error: "Invalid week start date format." };
@@ -112,18 +106,12 @@ export async function recordTaskReviewAction(
   payload: SimpleReviewPayload
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database client is not available." };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "You must be signed in to review tasks." };
-    }
+    const { supabase, user, isAdmin } = authResult.data;
 
     // Verify task exists and caller has permission
     const { data: task, error: taskError } = await supabase
@@ -139,14 +127,6 @@ export async function recordTaskReviewAction(
     if (task.week_start !== payload.weekStart) {
       return { success: false, error: "Review week must match task week." };
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const isAdmin = profile?.role === "ADMIN";
 
     if (!isAdmin && task.owner_id !== user.id) {
       return { success: false, error: "You can only review tasks you own." };
@@ -190,18 +170,12 @@ export async function rolloverTaskAction(
   payload: RolloverPayload
 ): Promise<{ success: boolean; newTaskId?: string; error?: string }> {
   try {
-    const supabase = await createClient();
-    if (!supabase) {
-      return { success: false, error: "Database client is not available." };
+    const authResult = await requireActiveUser();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return { success: false, error: "You must be signed in to roll over tasks." };
-    }
+    const { supabase } = authResult.data;
 
     // Attempt RPC call
     const { data: newTaskId, error: rpcError } = await supabase.rpc("rollover_task", {

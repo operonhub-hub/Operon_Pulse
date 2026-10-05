@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { requireActiveAdmin } from "@/lib/auth/guards";
 import { GoalStatus } from "@/types";
 
 export interface GoalActionResult {
@@ -25,30 +25,12 @@ export interface GoalFormPayload {
 export async function createGoalAction(
   payload: GoalFormPayload
 ): Promise<GoalActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available. Check environment variables." };
+  const authResult = await requireActiveAdmin();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Permission denied: Administrator role required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to create a weekly goal." };
-  }
-
-  // Check Admin Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "ADMIN") {
-    return { error: "Unauthorized: Only workspace administrators can create company goals." };
-  }
+  const { supabase, user } = authResult.data;
 
   // Validate Title
   const title = (payload.title || "").trim();
@@ -114,33 +96,15 @@ export async function updateGoalAction(
   goalId: string,
   payload: GoalFormPayload
 ): Promise<GoalActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveAdmin();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Permission denied: Administrator role required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to update a weekly goal." };
-  }
+  const { supabase } = authResult.data;
 
   if (!goalId) {
     return { error: "Goal ID is required for update." };
-  }
-
-  // Check Admin Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "ADMIN") {
-    return { error: "Unauthorized: Only workspace administrators can edit company goals." };
   }
 
   // Validate Title
@@ -213,36 +177,17 @@ export async function updateGoalAction(
 
 /**
  * Server action to delete a weekly goal (ADMIN only)
- * Linked tasks are unlinked (goal_id set to null) automatically via database ON DELETE SET NULL.
  */
 export async function deleteGoalAction(goalId: string): Promise<GoalActionResult> {
-  const supabase = await createClient();
-
-  if (!supabase) {
-    return { error: "Supabase client is not available." };
+  const authResult = await requireActiveAdmin();
+  if (authResult.error || !authResult.data) {
+    return { error: authResult.error || "Permission denied: Administrator role required." };
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "You must be authenticated to delete a goal." };
-  }
+  const { supabase } = authResult.data;
 
   if (!goalId) {
     return { error: "Goal ID is required." };
-  }
-
-  // Check Admin Role
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profile?.role !== "ADMIN") {
-    return { error: "Unauthorized: Only workspace administrators can delete company goals." };
   }
 
   const { error } = await supabase

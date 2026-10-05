@@ -57,6 +57,16 @@ export async function getCurrentUserSession(): Promise<CurrentUserSession> {
     .eq("id", user.id)
     .single();
 
+  // If user profile is marked inactive, treat session as unauthenticated
+  if (profile && profile.is_active === false) {
+    return {
+      user: null,
+      profile: null,
+      displayUser: unauthenticatedFallbackUser,
+      isAuthenticated: false,
+    };
+  }
+
   const fullName = profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
   const firstName = fullName.split(" ")[0] || fullName;
   const initials = fullName
@@ -74,6 +84,7 @@ export async function getCurrentUserSession(): Promise<CurrentUserSession> {
     initials: initials,
     role: profile?.role || "MEMBER",
     workspaceName: "OperonPulse HQ",
+    isActive: profile?.is_active ?? true,
   };
 
   return {

@@ -225,7 +225,7 @@ export async function getUserAttentionCenterData(
       .select("user_id, is_submitted")
       .eq("week_start", currentWeekStart)
       .eq("is_submitted", true),
-    getTeamMembersList(),
+    getTeamMembersList({ activeOnly: true }),
   ]);
 
   const adminPersonalTasks = (adminPersonalTasksRes.data as DbTask[]) || [];
@@ -266,9 +266,10 @@ export async function getUserAttentionCenterData(
   const submittedUserIds = new Set(
     (allCurrentCheckinsRes.data || []).map((c) => c.user_id)
   );
+  const activeTeamMembers = teamMembers.filter((m) => m.is_active !== false);
   const pendingCheckinsCount = Math.max(
     0,
-    teamMembers.filter((m) => !submittedUserIds.has(m.id)).length
+    activeTeamMembers.filter((m) => !submittedUserIds.has(m.id)).length
   );
 
   const reviewedPrevTaskIds = new Set(allPrevReviews.map((r) => r.task_id));

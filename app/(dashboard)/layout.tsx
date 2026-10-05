@@ -1,9 +1,9 @@
 import * as React from "react";
+import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { getCurrentUserSession } from "@/lib/auth/session";
 import { AuthSessionSync } from "@/components/auth/auth-session-sync";
-
 import { getCurrentUserAttentionCenterData } from "@/lib/attention/queries";
 
 export default async function DashboardLayout({
@@ -11,10 +11,14 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [session, attentionData] = await Promise.all([
-    getCurrentUserSession(),
-    getCurrentUserAttentionCenterData(),
-  ]);
+  const session = await getCurrentUserSession();
+
+  // Enforce active session boundary: redirect unauthenticated or deactivated users to /login
+  if (!session.isAuthenticated || !session.user || session.profile?.is_active === false) {
+    redirect("/login");
+  }
+
+  const attentionData = await getCurrentUserAttentionCenterData();
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground flex flex-col md:flex-row">

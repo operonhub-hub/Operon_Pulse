@@ -62,19 +62,29 @@ export async function getTeamBoardTasks(weekStart: string): Promise<TaskWithAssi
 
 /**
  * Retrieves team members list for task owner and support person dropdowns.
+ * Defaults to returning active members only (is_active !== false).
  */
-export async function getTeamMembersList(): Promise<Profile[]> {
+export async function getTeamMembersList(options?: {
+  activeOnly?: boolean;
+}): Promise<Profile[]> {
+  const activeOnly = options?.activeOnly ?? true;
   const supabase = await createClient();
 
   if (!supabase) {
     return [];
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("profiles")
-    .select("id, full_name, email, role, avatar_url, created_at, updated_at")
+    .select("id, full_name, email, role, avatar_url, is_active, created_at, updated_at")
     .order("role", { ascending: true })
     .order("full_name", { ascending: true });
+
+  if (activeOnly) {
+    query = query.neq("is_active", false);
+  }
+
+  const { data, error } = await query;
 
   if (error || !data) {
     return [];
