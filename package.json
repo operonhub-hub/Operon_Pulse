@@ -11,7 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types scripts/test-attention.mjs && node --experimental-strip-types scripts/test-deactivation.mjs && node --experimental-strip-types scripts/test-change-password.mjs"
+    "test": "node --experimental-strip-types scripts/test-attention.mjs && node --experimental-strip-types scripts/test-deactivation.mjs && node --experimental-strip-types scripts/test-change-password.mjs && node --experimental-strip-types scripts/test-team-creation.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

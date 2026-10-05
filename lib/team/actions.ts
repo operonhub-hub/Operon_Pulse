@@ -6,8 +6,6 @@ import { requireActiveAdmin } from "@/lib/auth/guards";
 import { UserRole } from "@/types";
 import { DEACTIVATION_BAN_DURATION, REACTIVATION_UNBAN_DURATION } from "./constants";
 
-export { DEACTIVATION_BAN_DURATION, REACTIVATION_UNBAN_DURATION };
-
 export interface CreateTeamMemberPayload {
   fullName: string;
   email: string;
@@ -80,19 +78,28 @@ export async function createTeamMemberAction(
       return {
         success: false,
         error:
-          "Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not configured. Please contact the administrator.",
+          "Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not configured in this environment. Please configure it in your deployment settings.",
       };
     }
 
     // Create Auth user via Supabase Admin Auth API
-    const { data: createdData, error: createError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Automatically confirm email for internal administrator provisioning
-      user_metadata: {
-        full_name: fullName,
-      },
-    });
+    let createdData;
+    let createError;
+    try {
+      const res = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true, // Automatically confirm email for internal administrator provisioning
+        user_metadata: {
+          full_name: fullName,
+        },
+      });
+      createdData = res.data;
+      createError = res.error;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Network error contacting authentication service.";
+      return { success: false, error: message };
+    }
 
     if (createError) {
       const errMsg = createError.message.toLowerCase();
@@ -107,36 +114,85 @@ export async function createTeamMemberAction(
       return { success: false, error: createError.message || "Failed to create user account." };
     }
 
-    if (!createdData?.user) {
+    if (!createdData?.user?.id) {
       return { success: false, error: "User creation did not return a valid user record." };
     }
 
     const newUserId = createdData.user.id;
 
+    // Verify database trigger (on_auth_user_created) created public.profiles record
+    let profileReady = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data: profileCheck, error: profileCheckError } = await adminClient
+        .from("profiles")
+        .select("id, role, is_active")
+        .eq("id", newUserId)
+        .maybeSingle();
+
+      if (!profileCheckError && profileCheck) {
+        profileReady = true;
+        break;
+      }
+      // Small bounded pause before retry
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+
+    if (!profileReady) {
+      // Rollback auth user creation if profile trigger failed
+      try {
+        await adminClient.auth.admin.deleteUser(newUserId);
+      } catch {
+        // Safe silent cleanup
+      }
+      return {
+        success: false,
+        error: "User was created but profile initialization failed. The creation was rolled back for safety.",
+      };
+    }
+
     // Role promotion if ADMIN was requested
     if (role === "ADMIN") {
-      const { error: updateRoleError } = await adminClient
-        .from("profiles")
-        .update({ role: "ADMIN", updated_at: new Date().toISOString() })
-        .eq("id", newUserId);
+      let rolePromoted = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: updatedProfile, error: updateRoleError } = await adminClient
+          .from("profiles")
+          .update({ role: "ADMIN", updated_at: new Date().toISOString() })
+          .eq("id", newUserId)
+          .select("id, role")
+          .maybeSingle();
 
-      if (updateRoleError) {
-        await adminClient.auth.admin.deleteUser(newUserId);
+        if (!updateRoleError && updatedProfile?.role === "ADMIN") {
+          rolePromoted = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+
+      if (!rolePromoted) {
+        try {
+          await adminClient.auth.admin.deleteUser(newUserId);
+        } catch {
+          // Safe silent cleanup
+        }
         return {
           success: false,
-          error: "Failed to assign administrator role to the new member. Creation rolled back.",
+          error: "Failed to assign administrator role to the new member. Creation was rolled back.",
         };
       }
     }
 
     // Revalidate dashboard & team routes
-    revalidatePath("/team");
-    revalidatePath("/dashboard");
-    revalidatePath("/insights");
-    revalidatePath("/my-tasks");
-    revalidatePath("/team-board");
-    revalidatePath("/goals");
-    revalidatePath("/weekly-review");
+    try {
+      revalidatePath("/team");
+      revalidatePath("/dashboard");
+      revalidatePath("/insights");
+      revalidatePath("/my-tasks");
+      revalidatePath("/team-board");
+      revalidatePath("/goals");
+      revalidatePath("/weekly-review");
+    } catch {
+      // Revalidation error should not fail the user creation
+    }
 
     return {
       success: true,
