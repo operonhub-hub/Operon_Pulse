@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getMondayDateString } from "@/lib/utils/date";
+import { normalizeWeekStart } from "@/lib/utils/week";
 import { getGoalsWithTaskSummary } from "@/lib/goals/queries";
 import { getTeamMembersList } from "@/lib/tasks/queries";
 import { GoalsView } from "@/components/goals/goals-view";
@@ -48,11 +48,7 @@ export default async function GoalsPage({ searchParams }: GoalsPageProps) {
 
   // Parse week from searchParams
   const resolvedSearchParams = await searchParams;
-  const requestedWeek = resolvedSearchParams?.week;
-  const selectedWeek =
-    requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek)
-      ? requestedWeek
-      : getMondayDateString();
+  const selectedWeek = normalizeWeekStart(resolvedSearchParams?.week);
 
   // Fetch goals with task summaries & team members concurrently
   const [{ goals, allWeekTasks }, teamMembers] = await Promise.all([

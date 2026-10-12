@@ -5,12 +5,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireActiveAdmin } from "@/lib/auth/guards";
 import { UserRole } from "@/types";
 import { DEACTIVATION_BAN_DURATION, REACTIVATION_UNBAN_DURATION } from "./constants";
+import { isValidDepartment } from "./departments";
 
 export interface CreateTeamMemberPayload {
   fullName: string;
   email: string;
   temporaryPassword: string;
   role: UserRole;
+  department?: string;
 }
 
 export interface CreateTeamMemberResult {
@@ -22,6 +24,24 @@ export interface CreateTeamMemberResult {
     email: string;
     fullName: string;
     role: UserRole;
+    department?: string | null;
+  };
+}
+
+export interface UpdateTeamMemberProfilePayload {
+  memberId: string;
+  fullName: string;
+  department?: string | null;
+}
+
+export interface UpdateTeamMemberProfileResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  user?: {
+    id: string;
+    fullName: string;
+    department?: string | null;
   };
 }
 
@@ -54,9 +74,14 @@ export async function createTeamMemberAction(
     const email = payload.email?.trim().toLowerCase() || "";
     const password = payload.temporaryPassword || "";
     const role: UserRole = payload.role === "ADMIN" ? "ADMIN" : "MEMBER";
+    const department = payload.department?.trim() || "";
 
     if (!fullName || fullName.length < 2 || fullName.length > 100) {
       return { success: false, error: "Please provide a valid full name (2–100 characters)." };
+    }
+
+    if (department && !isValidDepartment(department)) {
+      return { success: false, error: "Please select a valid department or leave unassigned." };
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -92,6 +117,7 @@ export async function createTeamMemberAction(
         email_confirm: true, // Automatically confirm email for internal administrator provisioning
         user_metadata: {
           full_name: fullName,
+          department: department || null,
         },
       });
       createdData = res.data;
@@ -181,6 +207,18 @@ export async function createTeamMemberAction(
       }
     }
 
+    // Update profile department if specified
+    if (department) {
+      try {
+        await adminClient
+          .from("profiles")
+          .update({ department, updated_at: new Date().toISOString() })
+          .eq("id", newUserId);
+      } catch {
+        // Safe fallback if migration is pending in database
+      }
+    }
+
     // Revalidate dashboard & team routes
     try {
       revalidatePath("/team");
@@ -202,6 +240,7 @@ export async function createTeamMemberAction(
         email,
         fullName,
         role,
+        department: department || null,
       },
     };
   } catch (err: unknown) {
@@ -449,6 +488,115 @@ export async function reactivateTeamMemberAction(
     return {
       success: true,
       message: `${displayName} has been reactivated.`,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "An unexpected server error occurred.";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Server action for workspace ADMINs to update a team member's profile (full name and department).
+ *
+ * Security guarantees:
+ * - Uses shared requireActiveAdmin() guard.
+ * - Does NOT allow changing email, password, or auth ID.
+ * - Validates department against allowed controlled list.
+ * - Performs mutations via privileged server Admin client.
+ */
+export async function updateTeamMemberProfileAction(
+  payload: UpdateTeamMemberProfilePayload
+): Promise<UpdateTeamMemberProfileResult> {
+  try {
+    const authResult = await requireActiveAdmin();
+    if (authResult.error || !authResult.data) {
+      return { success: false, error: authResult.error || "Authentication required." };
+    }
+
+    const memberId = payload.memberId?.trim();
+    if (!memberId) {
+      return { success: false, error: "Team member ID is required." };
+    }
+
+    const fullName = payload.fullName?.trim() || "";
+    if (!fullName || fullName.length < 2 || fullName.length > 100) {
+      return { success: false, error: "Please provide a valid full name (2–100 characters)." };
+    }
+
+    const department = payload.department?.trim() || null;
+    if (department && !isValidDepartment(department)) {
+      return { success: false, error: "Please select a valid department or leave unassigned." };
+    }
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      return {
+        success: false,
+        error:
+          "Server configuration error: SUPABASE_SERVICE_ROLE_KEY is not configured. Please contact the administrator.",
+      };
+    }
+
+    // Verify target member exists
+    const { data: targetProfile, error: targetError } = await adminClient
+      .from("profiles")
+      .select("id, email, role")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    if (targetError || !targetProfile) {
+      return { success: false, error: "Team member not found." };
+    }
+
+    // Update profile
+    const updateData: Record<string, unknown> = {
+      full_name: fullName,
+      updated_at: new Date().toISOString(),
+    };
+    if (department !== undefined) {
+      updateData.department = department;
+    }
+
+    const { error: updateError } = await adminClient
+      .from("profiles")
+      .update(updateData)
+      .eq("id", memberId);
+
+    if (updateError) {
+      // If error is due to pending department column migration, safely update full_name only
+      if (updateError.message?.toLowerCase().includes("department")) {
+        const { error: fallbackError } = await adminClient
+          .from("profiles")
+          .update({ full_name: fullName, updated_at: new Date().toISOString() })
+          .eq("id", memberId);
+
+        if (fallbackError) {
+          return { success: false, error: fallbackError.message || "Failed to update profile." };
+        }
+      } else {
+        return { success: false, error: updateError.message || "Failed to update member profile." };
+      }
+    }
+
+    // Revalidate affected routes
+    try {
+      revalidatePath("/team");
+      revalidatePath("/settings");
+      revalidatePath("/my-tasks");
+      revalidatePath("/team-board");
+      revalidatePath("/dashboard");
+    } catch {
+      // Ignore revalidation errors
+    }
+
+    return {
+      success: true,
+      message: "Team member updated successfully.",
+      user: {
+        id: memberId,
+        fullName,
+        department,
+      },
     };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "An unexpected server error occurred.";

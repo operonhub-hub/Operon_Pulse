@@ -16,6 +16,7 @@ export interface Profile {
   email: string;
   role: UserRole;
   avatar_url: string | null;
+  department?: string | null;
   is_active?: boolean;
   created_at: string;
   updated_at: string;

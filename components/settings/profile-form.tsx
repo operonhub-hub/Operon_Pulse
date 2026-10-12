@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useActionState } from "react";
-import { User, Mail, Shield, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { User, Mail, Shield, CheckCircle2, AlertCircle, Loader2, Building2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { updateProfileAction, type AuthActionResult } from "@/lib/auth/actions";
@@ -134,7 +134,26 @@ export function ProfileForm({ user, profile }: ProfileFormProps) {
                   )}
                 </div>
                 <p className="text-[11px] text-zinc-500">
-                  Role assignments require database-level admin permissions.
+                  Role assignments require administrator permissions.
+                </p>
+              </div>
+
+              {/* Department / Business Function (Read-only) */}
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="block text-xs font-semibold text-zinc-700">
+                  Department / Business Function
+                </label>
+                <div className="flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50/80 px-3 text-sm">
+                  <Building2 className="h-4 w-4 text-zinc-400" />
+                  <span className="font-semibold text-zinc-900 text-xs">
+                    {profile?.department || "Not assigned"}
+                  </span>
+                  <span className="ml-auto text-[10px] text-zinc-500 italic">
+                    Organization Structure
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Department assignments are managed by workspace administrators.
                 </p>
               </div>
             </div>

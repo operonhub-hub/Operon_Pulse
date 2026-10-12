@@ -225,7 +225,8 @@ export function GoalFormDialog({
                 <option value="">Unassigned (Team Goal)</option>
                 {teamMembers.map((member) => (
                   <option key={member.id} value={member.id}>
-                    {member.full_name || member.email} ({member.role})
+                    {member.full_name || member.email}
+                    {member.department ? ` · ${member.department}` : ""} ({member.role})
                   </option>
                 ))}
               </select>

@@ -70,6 +70,23 @@ export async function createTaskAction(
     progress = 100;
   }
 
+  // Validate Goal Week Alignment if goal_id is provided
+  if (payload.goal_id) {
+    const { data: goalData, error: goalError } = await supabase
+      .from("weekly_goals")
+      .select("id, week_start")
+      .eq("id", payload.goal_id)
+      .maybeSingle();
+
+    if (goalError || !goalData) {
+      return { error: "The selected weekly goal was not found." };
+    }
+
+    if (goalData.week_start !== weekStart) {
+      return { error: "Linked goal must belong to the same execution week as the task." };
+    }
+  }
+
   const { data, error } = await supabase
     .from("tasks")
     .insert({
@@ -130,7 +147,7 @@ export async function updateTaskAction(
   // Check existing task ownership
   const { data: existingTask, error: fetchError } = await supabase
     .from("tasks")
-    .select("owner_id, created_by")
+    .select("owner_id, created_by, week_start")
     .eq("id", taskId)
     .single();
 
@@ -153,6 +170,24 @@ export async function updateTaskAction(
   let progress = Math.min(Math.max(Number(payload.progress) || 0, 0), 100);
   if (payload.status === "DONE") {
     progress = 100;
+  }
+
+  // Validate Goal Week Alignment if goal_id is provided
+  const targetWeekStart = payload.week_start || existingTask.week_start;
+  if (payload.goal_id) {
+    const { data: goalData, error: goalError } = await supabase
+      .from("weekly_goals")
+      .select("id, week_start")
+      .eq("id", payload.goal_id)
+      .maybeSingle();
+
+    if (goalError || !goalData) {
+      return { error: "The selected weekly goal was not found." };
+    }
+
+    if (goalData.week_start !== targetWeekStart) {
+      return { error: "Linked goal must belong to the same execution week as the task." };
+    }
   }
 
   const updateData: Record<string, unknown> = {

@@ -283,13 +283,17 @@ export function TaskFormDialog({
                 >
                   {teamMembers.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.full_name || m.email} {m.role === "ADMIN" ? "(Admin)" : ""}
+                      {m.full_name || m.email}
+                      {m.department ? ` · ${m.department}` : ""}
+                      {m.role === "ADMIN" ? " (Admin)" : ""}
                     </option>
                   ))}
                 </select>
               ) : (
                 <div className="flex h-9 items-center rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-xs text-zinc-700 font-medium dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                  {currentUser.full_name || currentUser.email} (You)
+                  {currentUser.full_name || currentUser.email}
+                  {currentUser.department ? ` · ${currentUser.department}` : ""}{" "}
+                  (You)
                 </div>
               )}
             </div>
@@ -311,6 +315,7 @@ export function TaskFormDialog({
                   .map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.full_name || m.email}
+                      {m.department ? ` · ${m.department}` : ""}
                     </option>
                   ))}
               </select>

@@ -5,11 +5,12 @@ import { UserPlus, Eye, EyeOff, Shield, User, AlertCircle, CheckCircle2, Loader2
 import { Button } from "@/components/ui/button";
 import { UserRole } from "@/types";
 import { createTeamMemberAction } from "@/lib/team/actions";
+import { DEPARTMENTS } from "@/lib/team/departments";
 
 interface AddMemberDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onMemberAdded?: (member: { id: string; email: string; fullName: string; role: UserRole }) => void;
+  onMemberAdded?: (member: { id: string; email: string; fullName: string; role: UserRole; department?: string | null }) => void;
 }
 
 export function AddMemberDialog({
@@ -21,6 +22,7 @@ export function AddMemberDialog({
   const [email, setEmail] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [role, setRole] = useState<UserRole>("MEMBER");
+  const [department, setDepartment] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +35,7 @@ export function AddMemberDialog({
     setEmail("");
     setTemporaryPassword("");
     setRole("MEMBER");
+    setDepartment("");
     setShowPassword(false);
     setError(null);
     setSuccessMessage(null);
@@ -71,6 +74,7 @@ export function AddMemberDialog({
         email: email.trim(),
         temporaryPassword,
         role,
+        department: department.trim() || undefined,
       });
 
       if (!res.success) {
@@ -259,6 +263,33 @@ export function AddMemberDialog({
                 </div>
               </button>
             </div>
+          </div>
+
+          {/* Department / Function */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between">
+              <label htmlFor="member-department" className="text-xs font-semibold text-foreground">
+                Department / Function
+              </label>
+              <span className="text-[11px] text-muted-foreground">Optional</span>
+            </div>
+            <select
+              id="member-department"
+              disabled={loading}
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="w-full px-3 py-2 text-xs border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            >
+              <option value="">Select Department (Optional)...</option>
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Business function within the organization (e.g. Engineering, Sales).
+            </p>
           </div>
 
           {/* Action Buttons */}

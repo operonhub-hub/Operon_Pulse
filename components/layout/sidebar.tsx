@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   CheckSquare,
@@ -29,6 +29,8 @@ export interface NavItem {
   badge?: string | number;
 }
 
+const WEEK_AWARE_ROUTES = new Set(["/my-tasks", "/team-board", "/goals"]);
+
 export const mainNavItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "My Tasks", href: "/my-tasks", icon: CheckSquare },
@@ -51,6 +53,10 @@ interface SidebarProps {
 
 export function Sidebar({ user, className, onNavigate }: SidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const rawWeek = searchParams.get("week");
+  const hasCustomWeek = Boolean(rawWeek && /^\d{4}-\d{2}-\d{2}$/.test(rawWeek));
+
   const displayName = user?.name || "David Peterson";
   const displayRole = user?.role || "MEMBER";
   const displayInitials = user?.initials || "DP";
@@ -95,11 +101,13 @@ export function Sidebar({ user, className, onNavigate }: SidebarProps) {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname?.startsWith(item.href));
+              const isWeekAware = WEEK_AWARE_ROUTES.has(item.href);
+              const targetHref = isWeekAware && hasCustomWeek ? `${item.href}?week=${rawWeek}` : item.href;
 
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={targetHref}
                   onClick={onNavigate}
                   className={cn(
                     "group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors",

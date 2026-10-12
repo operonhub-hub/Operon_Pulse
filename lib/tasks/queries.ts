@@ -74,9 +74,10 @@ export async function getTeamMembersList(options?: {
     return [];
   }
 
+  // Attempt to query with department, falling back gracefully if migration is pending
   let query = supabase
     .from("profiles")
-    .select("id, full_name, email, role, avatar_url, is_active, created_at, updated_at")
+    .select("id, full_name, email, role, avatar_url, department, is_active, created_at, updated_at")
     .order("role", { ascending: true })
     .order("full_name", { ascending: true });
 
@@ -86,9 +87,21 @@ export async function getTeamMembersList(options?: {
 
   const { data, error } = await query;
 
-  if (error || !data) {
-    return [];
+  if (error) {
+    // If column 'department' does not exist yet in database, fall back to core columns
+    let fallbackQuery = supabase
+      .from("profiles")
+      .select("id, full_name, email, role, avatar_url, is_active, created_at, updated_at")
+      .order("role", { ascending: true })
+      .order("full_name", { ascending: true });
+
+    if (activeOnly) {
+      fallbackQuery = fallbackQuery.neq("is_active", false);
+    }
+
+    const { data: fallbackData } = await fallbackQuery;
+    return (fallbackData as Profile[]) || [];
   }
 
-  return data as Profile[];
+  return (data as Profile[]) || [];
 }

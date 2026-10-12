@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getMondayDateString } from "@/lib/utils/date";
+import { normalizeWeekStart } from "@/lib/utils/week";
 import { getTasksForWeek, getTeamMembersList } from "@/lib/tasks/queries";
 import { getGoalsForWeek } from "@/lib/goals/queries";
 import { TasksView } from "@/components/tasks/tasks-view";
@@ -48,11 +48,7 @@ export default async function MyTasksPage({ searchParams }: MyTasksPageProps) {
 
   // Parse target week from searchParams or default to current week's Monday
   const resolvedSearchParams = await searchParams;
-  const requestedWeek = resolvedSearchParams?.week;
-  const selectedWeek =
-    requestedWeek && /^\d{4}-\d{2}-\d{2}$/.test(requestedWeek)
-      ? requestedWeek
-      : getMondayDateString();
+  const selectedWeek = normalizeWeekStart(resolvedSearchParams?.week);
 
   // Fetch tasks, team members, and weekly goals concurrently
   const [tasks, teamMembers, goals] = await Promise.all([
