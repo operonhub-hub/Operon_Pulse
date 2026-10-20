@@ -162,56 +162,6 @@ export const reviewOutcomeDisplayMap: Record<TaskReviewOutcome, string> = {
   KEEP_IN_WEEK: "Keep in Week",
 };
 
-export interface Task {
-  id: string;
-  title: string;
-  priority: Priority;
-  status: Status;
-  progress: number; // 0 to 100
-  dueDate: string;
-  assignee?: {
-    name: string;
-    avatarUrl?: string;
-    initials: string;
-  };
-}
-
-export interface TeamMember {
-  id: string;
-  name: string;
-  role: string;
-  progress: number; // 0 to 100
-  initials: string;
-  avatarUrl?: string;
-  activeTasksCount: number;
-}
-
-export interface StatMetric {
-  id: string;
-  label: string;
-  value: number | string;
-  change?: string;
-  changeType?: "positive" | "negative" | "neutral";
-  variant?: "default" | "success" | "warning" | "danger" | "info";
-  description?: string;
-}
-
-export interface AttentionItem {
-  id: string;
-  title: string;
-  category: "blocked" | "overdue" | "risk";
-  severity: "critical" | "warning";
-  timestamp?: string;
-}
-
-export interface WeeklyFocus {
-  title: string;
-  description?: string;
-  progress: number;
-  totalTasks: number;
-  completedTasks: number;
-}
-
 export interface UserProfile {
   name: string;
   firstName: string;
