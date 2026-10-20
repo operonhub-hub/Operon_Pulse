@@ -3,8 +3,15 @@
 import * as React from "react";
 import { X, Loader2, AlertCircle, AlertTriangle, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createTaskAction, updateTaskAction, TaskActionResult } from "@/lib/tasks/actions";
-import { TaskWithAssignees, Profile, TaskPriority, TaskStatus, WeeklyGoal } from "@/types";
+import {
+  createTaskAction,
+  updateTaskAction,
+  updateTaskStatusAction,
+  TaskActionResult,
+} from "@/lib/tasks/actions";
+import { TaskWithAssignees, Profile, TaskPriority, TaskStatus, TaskSubtask, WeeklyGoal } from "@/types";
+import { computeSubtaskProgress, getOpenSubtaskCount } from "@/lib/subtasks/logic";
+import { SubtaskChecklist, type TaskStateUpdate } from "@/components/tasks/subtask-checklist";
 
 interface TaskFormDialogProps {
   isOpen: boolean;
@@ -42,6 +49,11 @@ export function TaskFormDialog({
   const [blockerReason, setBlockerReason] = React.useState(task?.blocker_reason || "");
   const [acceptanceCriteria, setAcceptanceCriteria] = React.useState(task?.acceptance_criteria || "");
   const [goalId, setGoalId] = React.useState<string>(task?.goal_id || "");
+  const [subtasks, setSubtasks] = React.useState<TaskSubtask[]>(task?.subtasks ?? []);
+  // Last status the database (or the subtask rules) produced. A subtask change
+  // can move the status (e.g. Not Started -> In Progress); the form follows it
+  // so "Save Changes" never writes the stale value back.
+  const lastDerivedStatus = React.useRef<TaskStatus>(task?.status || "NOT_STARTED");
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -61,6 +73,8 @@ export function TaskFormDialog({
       setBlockerReason(task.blocker_reason || "");
       setAcceptanceCriteria(task.acceptance_criteria || "");
       setGoalId(task.goal_id || "");
+      setSubtasks(task.subtasks ?? []);
+      lastDerivedStatus.current = task.status;
     } else {
       setTitle("");
       setDescription("");
@@ -74,6 +88,8 @@ export function TaskFormDialog({
       setBlockerReason("");
       setAcceptanceCriteria("");
       setGoalId("");
+      setSubtasks([]);
+      lastDerivedStatus.current = "NOT_STARTED";
     }
     setError(null);
   }, [task, currentUser.id, isOpen]);
@@ -100,6 +116,35 @@ export function TaskFormDialog({
     } else if (newStatus === "BLOCKED") {
       setIsBlocked(true);
     }
+  };
+
+  const hasSubtasks = subtasks.length > 0;
+  const openSubtaskCount = getOpenSubtaskCount(subtasks);
+  const displayedProgress = hasSubtasks
+    ? status === "DONE"
+      ? 100
+      : computeSubtaskProgress(subtasks) ?? progress
+    : progress;
+
+  const handleTaskStateChange = (next: TaskStateUpdate) => {
+    if (next.status !== lastDerivedStatus.current) {
+      lastDerivedStatus.current = next.status;
+      setStatus(next.status);
+      if (next.status !== "BLOCKED") setIsBlocked(false);
+    }
+    setProgress(next.progress);
+  };
+
+  const handleMarkDone = async () => {
+    if (isEditing && task) {
+      const res = await updateTaskStatusAction(task.id, "DONE");
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      lastDerivedStatus.current = "DONE";
+    }
+    handleStatusChange("DONE");
   };
 
   const handleBlockedToggle = (blocked: boolean) => {
@@ -135,13 +180,17 @@ export function TaskFormDialog({
         support_person_id: supportPersonId || null,
         priority,
         status,
-        progress: status === "DONE" ? 100 : Number(progress),
+        // Progress is calculated by the database when the task has subtasks
+        progress: hasSubtasks ? undefined : status === "DONE" ? 100 : Number(progress),
         due_date: dueDate || null,
         week_start: task?.week_start || currentWeekMonday,
         is_blocked: isBlocked,
         blocker_reason: isBlocked ? blockerReason.trim() : null,
         acceptance_criteria: acceptanceCriteria.trim() || null,
         goal_id: goalId || null,
+        subtasks: !isEditing && hasSubtasks
+          ? subtasks.map((s) => ({ title: s.title, is_done: s.is_done }))
+          : undefined,
       };
 
       let res: TaskActionResult;
@@ -359,6 +408,12 @@ export function TaskFormDialog({
                 <option value="DONE">Done</option>
                 <option value="BLOCKED">Blocked</option>
               </select>
+              {status === "DONE" && openSubtaskCount > 0 && (
+                <p role="status" className="text-[11px] font-medium text-amber-700">
+                  {openSubtaskCount} {openSubtaskCount === 1 ? "subtask is" : "subtasks are"} still open. The task
+                  will show 100% while the checklist stays as it is.
+                </p>
+              )}
             </div>
 
             {/* Due Date */}
@@ -376,13 +431,28 @@ export function TaskFormDialog({
             </div>
           </div>
 
-          {/* Progress Slider */}
+          {/* Subtasks */}
+          <SubtaskChecklist
+            mode={isEditing ? "live" : "staged"}
+            taskId={task?.id}
+            subtasks={subtasks}
+            taskStatus={status}
+            taskProgress={progress}
+            canManage
+            canToggle
+            canMarkDone
+            onSubtasksChange={setSubtasks}
+            onTaskStateChange={handleTaskStateChange}
+            onMarkDone={handleMarkDone}
+          />
+
+          {/* Progress Slider (read-only when calculated from subtasks) */}
           <div className="space-y-1.5 rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800 dark:bg-zinc-950/40">
             <div className="flex items-center justify-between">
               <label htmlFor="taskProgress" className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
                 Progress Percentage
               </label>
-              <span className="font-bold text-zinc-900 dark:text-zinc-100 text-xs">{progress}%</span>
+              <span className="font-bold text-zinc-900 dark:text-zinc-100 text-xs">{displayedProgress}%</span>
             </div>
             <input
               id="taskProgress"
@@ -390,11 +460,17 @@ export function TaskFormDialog({
               min="0"
               max="100"
               step="5"
-              disabled={status === "DONE"}
-              value={progress}
+              disabled={status === "DONE" || hasSubtasks}
+              aria-describedby={hasSubtasks ? "taskProgressHint" : undefined}
+              value={displayedProgress}
               onChange={(e) => setProgress(Number(e.target.value))}
-              className="w-full accent-amber-500"
+              className="w-full accent-amber-500 disabled:opacity-60"
             />
+            {hasSubtasks && (
+              <p id="taskProgressHint" className="text-[11px] text-zinc-500">
+                Calculated from subtasks
+              </p>
+            )}
           </div>
 
           {/* Blocker Section */}

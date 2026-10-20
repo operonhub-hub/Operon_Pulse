@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { requireActiveUser } from "@/lib/auth/guards";
 import { TaskPriority, TaskStatus } from "@/types";
+import {
+  MAX_SUBTASKS_PER_TASK,
+  PROGRESS_FROM_SUBTASKS_ERROR,
+  normalizeSubtaskTitle,
+} from "@/lib/subtasks/logic";
+import { taskHasSubtasks } from "@/lib/subtasks/queries";
 
 export interface TaskActionResult {
   success?: boolean;
@@ -17,13 +23,16 @@ export interface TaskFormPayload {
   support_person_id?: string | null;
   priority: TaskPriority;
   status: TaskStatus;
-  progress: number;
+  /** Omit when the task has (or is being created with) subtasks: progress is then calculated. */
+  progress?: number;
   due_date?: string | null;
   week_start: string;
   is_blocked?: boolean;
   blocker_reason?: string | null;
   acceptance_criteria?: string | null;
   goal_id?: string | null;
+  /** Create only: initial checklist, in order. */
+  subtasks?: { title: string; is_done?: boolean }[];
 }
 
 /**
@@ -64,7 +73,23 @@ export async function createTaskAction(
     return { error: "A blocker reason is required when a task is marked as blocked." };
   }
 
-  // Validate Progress
+  // Validate initial subtasks
+  const subtaskRows: { title: string; is_done: boolean; position: number }[] = [];
+  for (const [index, item] of (payload.subtasks ?? []).entries()) {
+    const parsed = normalizeSubtaskTitle(item?.title);
+    if (!parsed.ok) {
+      return { error: `Subtask ${index + 1}: ${parsed.error}` };
+    }
+    subtaskRows.push({ title: parsed.title, is_done: Boolean(item.is_done), position: index });
+  }
+  if (subtaskRows.length > MAX_SUBTASKS_PER_TASK) {
+    return { error: `A task can have at most ${MAX_SUBTASKS_PER_TASK} subtasks.` };
+  }
+  if (subtaskRows.length > 0 && payload.progress !== undefined) {
+    return { error: PROGRESS_FROM_SUBTASKS_ERROR };
+  }
+
+  // Validate Progress (the database recalculates it once subtasks are inserted)
   let progress = Math.min(Math.max(Number(payload.progress) || 0, 0), 100);
   if (payload.status === "DONE") {
     progress = 100;
@@ -110,6 +135,21 @@ export async function createTaskAction(
 
   if (error) {
     return { error: error.message || "Failed to create task in database." };
+  }
+
+  if (subtaskRows.length > 0 && data?.id) {
+    const { error: subtaskError } = await supabase.from("task_subtasks").insert(
+      subtaskRows.map((row) => ({ ...row, task_id: data.id, created_by: user.id }))
+    );
+    if (subtaskError) {
+      // Don't leave a task without the checklist the user asked for
+      await supabase.from("tasks").delete().eq("id", data.id);
+      return {
+        error: subtaskError.message?.includes("task_subtasks")
+          ? "Subtasks aren't available yet: the database migration hasn't been applied."
+          : subtaskError.message || "Failed to save subtasks. The task was not created.",
+      };
+    }
   }
 
   revalidatePath("/weekly-review");
@@ -166,7 +206,11 @@ export async function updateTaskAction(
     return { error: "A blocker reason is required when a task is marked as blocked." };
   }
 
-  // Progress logic
+  // Progress logic: tasks with subtasks get progress from the database
+  const hasSubtasks = await taskHasSubtasks(supabase, taskId);
+  if (hasSubtasks && payload.progress !== undefined) {
+    return { error: PROGRESS_FROM_SUBTASKS_ERROR };
+  }
   let progress = Math.min(Math.max(Number(payload.progress) || 0, 0), 100);
   if (payload.status === "DONE") {
     progress = 100;
@@ -196,7 +240,6 @@ export async function updateTaskAction(
     support_person_id: payload.support_person_id || null,
     priority: payload.priority,
     status: payload.status,
-    progress,
     due_date: payload.due_date || null,
     week_start: payload.week_start,
     is_blocked: isBlocked,
@@ -205,6 +248,11 @@ export async function updateTaskAction(
     goal_id: payload.goal_id || null,
     updated_at: new Date().toISOString(),
   };
+
+  // Only write progress when the client sent one (it omits it for subtask-driven tasks)
+  if (!hasSubtasks && payload.progress !== undefined) {
+    updateData.progress = progress;
+  }
 
   // Only admins can reassign owner_id
   if (isAdmin && payload.owner_id) {
@@ -271,6 +319,12 @@ export async function updateTaskStatusAction(
     return { error: "A blocker reason is required when moving a task to Blocked." };
   }
 
+  // Tasks with subtasks: progress comes from the database, never from the client
+  const hasSubtasks = await taskHasSubtasks(supabase, taskId);
+  if (hasSubtasks && typeof newProgress === "number") {
+    return { error: PROGRESS_FROM_SUBTASKS_ERROR };
+  }
+
   let progress = existingTask.progress;
   if (typeof newProgress === "number") {
     progress = Math.min(Math.max(newProgress, 0), 100);
@@ -284,9 +338,11 @@ export async function updateTaskStatusAction(
     status: newStatus,
     is_blocked: isBlocked,
     blocker_reason: isBlocked ? trimmedBlocker : null,
-    progress,
     updated_at: new Date().toISOString(),
   };
+  if (!hasSubtasks) {
+    updateData.progress = progress;
+  }
 
   const { error } = await supabase
     .from("tasks")

@@ -20,6 +20,7 @@ import {
 } from "@/types";
 import { Progress } from "@/components/ui/progress";
 import { RolloverBadge } from "@/components/reviews/rollover-badge";
+import { SubtaskCounter } from "@/components/tasks/subtask-counter";
 
 interface KanbanCardProps {
   task: TaskWithAssignees;
@@ -188,7 +189,10 @@ export function KanbanCard({
       {/* Progress */}
       <div className="mt-2.5 space-y-1">
         <div className="flex items-center justify-between text-[10px] text-stone-500 dark:text-stone-400">
-          <span>Progress</span>
+          <span className="flex items-center gap-2">
+            Progress
+            <SubtaskCounter subtasks={task.subtasks} className="text-[10px]" />
+          </span>
           <span className="font-semibold">{task.progress}%</span>
         </div>
         <Progress value={task.progress} className="h-1.5" />

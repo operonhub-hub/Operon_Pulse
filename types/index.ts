@@ -72,6 +72,18 @@ export interface DbTask {
   updated_at: string;
 }
 
+export interface TaskSubtask {
+  id: string;
+  task_id: string;
+  title: string;
+  is_done: boolean;
+  position: number;
+  created_by: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TaskWithAssignees extends DbTask {
   owner?: Profile | null;
   created_by_profile?: Profile | null;
@@ -79,6 +91,8 @@ export interface TaskWithAssignees extends DbTask {
   goal?: WeeklyGoal | null;
   carried_from_task?: TaskWithAssignees | null;
   review_outcome?: TaskReviewOutcome | null;
+  /** Ordered by position. Empty or undefined when the task has no subtasks. */
+  subtasks?: TaskSubtask[];
 }
 
 export interface TaskWeeklyReview {

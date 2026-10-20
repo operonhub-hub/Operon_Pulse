@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { TaskWithAssignees, Profile } from "@/types";
+import { attachSubtasks } from "@/lib/subtasks/queries";
 
 /**
  * Retrieves tasks for a specific week_start date (YYYY-MM-DD).
@@ -47,10 +48,10 @@ export async function getTasksForWeek(
       .order("created_at", { ascending: false });
 
     const { data: fallbackData } = await fallbackQuery;
-    return (fallbackData as TaskWithAssignees[]) || [];
+    return attachSubtasks(supabase, (fallbackData as TaskWithAssignees[]) || []);
   }
 
-  return (data as TaskWithAssignees[]) || [];
+  return attachSubtasks(supabase, (data as TaskWithAssignees[]) || []);
 }
 
 /**

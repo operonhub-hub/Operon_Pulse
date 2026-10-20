@@ -16,6 +16,8 @@ import { WeekNavigator } from "@/components/tasks/week-navigator";
 import { KanbanColumn } from "./kanban-column";
 import { BlockerPromptDialog } from "./blocker-prompt-dialog";
 import { TaskDetailDialog } from "./task-detail-dialog";
+import { OpenSubtasksConfirmDialog } from "@/components/tasks/open-subtasks-confirm-dialog";
+import { computeSubtaskProgress, getOpenSubtaskCount } from "@/lib/subtasks/logic";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { DeleteTaskDialog } from "@/components/tasks/delete-task-dialog";
 import { updateTaskStatusAction } from "@/lib/tasks/actions";
@@ -54,6 +56,8 @@ export function TeamBoardView({
   // Blocker prompt state
   const [blockerPromptTask, setBlockerPromptTask] = React.useState<TaskWithAssignees | null>(null);
   const [pendingBlockerTargetStatus, setPendingBlockerTargetStatus] = React.useState<TaskStatus | null>(null);
+  // Task awaiting confirmation to be marked Done while subtasks are still open
+  const [doneConfirmTask, setDoneConfirmTask] = React.useState<TaskWithAssignees | null>(null);
 
   // Error alert banner
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
@@ -129,7 +133,8 @@ export function TeamBoardView({
   const handleMoveStatus = async (
     task: TaskWithAssignees,
     newStatus: TaskStatus,
-    providedBlockerReason?: string
+    providedBlockerReason?: string,
+    confirmedOpenSubtasks = false
   ) => {
     if (task.status === newStatus && !providedBlockerReason) return;
 
@@ -147,6 +152,12 @@ export function TeamBoardView({
       return;
     }
 
+    // Warn before completing a task whose checklist isn't finished
+    if (newStatus === "DONE" && !confirmedOpenSubtasks && getOpenSubtaskCount(task.subtasks) > 0) {
+      setDoneConfirmTask(task);
+      return;
+    }
+
     // Capture original state for rollback
     const originalTasks = [...tasks];
 
@@ -155,8 +166,12 @@ export function TeamBoardView({
       if (t.id === task.id) {
         const isBlocked = newStatus === "BLOCKED";
         let progress = t.progress;
+        const subtaskProgress = computeSubtaskProgress(t.subtasks);
         if (newStatus === "DONE") {
           progress = 100;
+        } else if (subtaskProgress !== null) {
+          // Calculated from subtasks; moving columns doesn't reset it
+          progress = subtaskProgress;
         } else if (newStatus === "NOT_STARTED") {
           progress = 0;
         }
@@ -446,6 +461,23 @@ export function TeamBoardView({
           isOpen={!!viewingTask}
           onClose={() => setViewingTask(null)}
           task={viewingTask}
+          currentUserId={currentUser.id}
+          currentUserRole={currentUser.role}
+        />
+      )}
+
+      {/* Confirm marking Done with open subtasks */}
+      {doneConfirmTask && (
+        <OpenSubtasksConfirmDialog
+          isOpen={!!doneConfirmTask}
+          taskTitle={doneConfirmTask.title}
+          openCount={getOpenSubtaskCount(doneConfirmTask.subtasks)}
+          onCancel={() => setDoneConfirmTask(null)}
+          onConfirm={() => {
+            const task = doneConfirmTask;
+            setDoneConfirmTask(null);
+            void handleMoveStatus(task, "DONE", undefined, true);
+          }}
         />
       )}
 

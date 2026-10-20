@@ -9,24 +9,54 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { TaskWithAssignees, priorityDisplayMap, statusDisplayMap } from "@/types";
+import { TaskStatus, TaskWithAssignees, priorityDisplayMap, statusDisplayMap } from "@/types";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
+import { canManageSubtasks, canToggleSubtasks } from "@/lib/subtasks/logic";
+import { updateTaskStatusAction } from "@/lib/tasks/actions";
 
 interface TaskDetailDialogProps {
   isOpen: boolean;
   onClose: () => void;
   task: TaskWithAssignees | null;
+  currentUserId?: string;
+  currentUserRole?: string;
 }
 
 export function TaskDetailDialog({
   isOpen,
   onClose,
   task,
+  currentUserId,
+  currentUserRole,
 }: TaskDetailDialogProps) {
+  // Status/progress can change from here when the viewer ticks subtasks
+  const [liveState, setLiveState] = React.useState<{ status: TaskStatus; progress: number } | null>(
+    task ? { status: task.status, progress: task.progress } : null
+  );
+  const [markDoneError, setMarkDoneError] = React.useState<string | null>(null);
+
   if (!isOpen || !task) return null;
 
-  const isBlocked = task.is_blocked || task.status === "BLOCKED";
+  const status = liveState?.status ?? task.status;
+  const progress = liveState?.progress ?? task.progress;
+  const isBlocked = (task.is_blocked && status === task.status) || status === "BLOCKED";
+
+  const actor = { userId: currentUserId, isAdmin: currentUserRole === "ADMIN" };
+  const canManage = canManageSubtasks(actor, task);
+  const canToggle = canToggleSubtasks(actor, task);
+  const subtasks = task.subtasks ?? [];
+
+  const handleMarkDone = async () => {
+    setMarkDoneError(null);
+    const res = await updateTaskStatusAction(task.id, "DONE");
+    if (res.error) {
+      setMarkDoneError(res.error);
+      return;
+    }
+    setLiveState({ status: "DONE", progress: 100 });
+  };
 
   const getPriorityBadgeClass = () => {
     switch (task.priority) {
@@ -42,7 +72,7 @@ export function TaskDetailDialog({
   };
 
   const getStatusBadgeClass = () => {
-    switch (task.status) {
+    switch (status) {
       case "DONE":
         return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900";
       case "IN_PROGRESS":
@@ -80,11 +110,13 @@ export function TaskDetailDialog({
               <span
                 className={`rounded-md border px-2.5 py-0.5 text-xs font-semibold ${getStatusBadgeClass()}`}
               >
-                {statusDisplayMap[task.status]}
+                {statusDisplayMap[status]}
               </span>
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-400 dark:text-stone-500">
-                <Lock className="h-3 w-3" /> Read-Only View
-              </span>
+              {!canToggle && !canManage && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-400 dark:text-stone-500">
+                  <Lock className="h-3 w-3" /> Read-Only View
+                </span>
+              )}
             </div>
             <h3
               id="task-detail-title"
@@ -119,10 +151,33 @@ export function TaskDetailDialog({
           <div className="space-y-1.5 rounded-xl bg-stone-50 p-3 dark:bg-stone-800/50">
             <div className="flex items-center justify-between font-medium text-stone-700 dark:text-stone-300">
               <span>Execution Progress</span>
-              <span>{task.progress}%</span>
+              <span>{progress}%</span>
             </div>
-            <Progress value={task.progress} className="h-2" />
+            <Progress value={progress} className="h-2" />
+            {subtasks.length > 0 && (
+              <p className="text-[11px] text-stone-500">Calculated from subtasks</p>
+            )}
           </div>
+
+          {/* Subtasks: tickable by the owner, support person and admins */}
+          {(subtasks.length > 0 || canManage) && (
+            <SubtaskChecklist
+              mode="live"
+              taskId={task.id}
+              subtasks={subtasks}
+              taskStatus={status}
+              taskProgress={progress}
+              canManage={canManage}
+              canToggle={canToggle}
+              canMarkDone={canManage}
+              onTaskStateChange={setLiveState}
+              onMarkDone={handleMarkDone}
+              compact
+            />
+          )}
+          {markDoneError && (
+            <p role="alert" className="text-[11px] font-medium text-rose-700">{markDoneError}</p>
+          )}
 
           {/* Description */}
           {task.description && (

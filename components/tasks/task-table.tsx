@@ -22,6 +22,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { RolloverBadge } from "@/components/reviews/rollover-badge";
+import { SubtaskCounter } from "@/components/tasks/subtask-counter";
 
 interface TaskTableProps {
   tasks: TaskWithAssignees[];
@@ -265,7 +266,10 @@ export function TaskTable({
                       <td className="px-4 py-4 align-top min-w-[120px]">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400">
-                            <span>{task.progress}%</span>
+                            <span className="flex items-center gap-2">
+                              {task.progress}%
+                              <SubtaskCounter subtasks={task.subtasks} />
+                            </span>
                             {task.status === "DONE" && (
                               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                             )}
@@ -411,7 +415,10 @@ export function TaskTable({
 
                   <div className="mt-3 space-y-1">
                     <div className="flex items-center justify-between text-[11px] text-stone-500">
-                      <span>Progress</span>
+                      <span className="flex items-center gap-2">
+                        Progress
+                        <SubtaskCounter subtasks={task.subtasks} />
+                      </span>
                       <span>{task.progress}%</span>
                     </div>
                     <Progress value={task.progress} className="h-1.5" />
