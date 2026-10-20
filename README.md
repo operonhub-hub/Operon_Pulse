@@ -1,263 +1,219 @@
 # OperonPulse
 
-> **OperonPulse is a lightweight team execution and productivity platform for tracking weekly priorities, progress, blockers, goals, and accountability.**
-> 
-> *Core Cadence: Plan → Prioritize → Execute → Track → Unblock → Review → Carry Forward → Improve*
+> **Operon's internal team execution tool** for tracking weekly priorities, progress, blockers, goals and accountability.
+>
+> *Plan → Prioritize → Execute → Track → Unblock → Review → Carry Forward → Improve*
+
+OperonPulse is **not** part of Operon's school product. It's a single-workspace tool for the Operon team, and all week boundaries use the **Africa/Lagos** timezone (`lib/utils/date.ts`).
+
+For architecture, data model, security notes and known issues, see [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md). Working rules for contributors (and AI assistants) are in [`CLAUDE.md`](CLAUDE.md).
 
 ---
 
-## 📌 Project Overview
+## 🚀 Current status
 
-**OperonPulse** is an internal team execution and productivity platform designed specifically for fast-moving startup teams. Rather than managing complex, endless backlogs, OperonPulse brings laser-focus to **weekly execution cycles**:
-- Company-level weekly goals establishing clear top priorities.
-- Direct alignment connecting operational tasks to strategic goals.
-- Real-time tracking of task progress, statuses, and critical blockers.
-- End-of-week review, intentional task rollover, carryover history, and weekly check-ins.
-- Unified founder execution overview and velocity metrics for founders and team leads.
+**Phases 1–8.2 complete · Phase 9 (cleanup and hardening) in progress.**
 
----
-
-## 🚀 Current Status: Phase 7.1 Completed (Admin Team Management)
-
-Phase 7.1 adds in-app team member provisioning for workspace Administrators. Admins can create new Member or Admin accounts directly from `/team` using secure server-only Supabase Admin Auth APIs without exposing credentials to the client.
-
-### What is Completed in Phase 7.1:
-- [x] **Server-Only Admin Client (`lib/supabase/admin.ts`)**:
-  - Initialized with `SUPABASE_SERVICE_ROLE_KEY` using `server-only` to ensure it is never bundled or leaked to client browsers.
-- [x] **Privileged Creation Server Action (`lib/team/actions.ts`)**:
-  - `createTeamMemberAction`: Authenticates the caller, strictly verifies `callerProfile.role === 'ADMIN'`, and provisions the user via `supabase.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name } })`.
-  - Seamlessly integrates with the existing database trigger `on_auth_user_created` to create matching `public.profiles` records.
-  - Safely handles ADMIN role promotions and duplicate email violations.
-- [x] **Admin Add Member Dialog (`components/team/add-member-dialog.tsx`)**:
-  - Modal form for Admins to input Full Name, Work Email, Temporary Password (with show/hide toggle), and Role (MEMBER or ADMIN).
-  - Passwords are strictly ephemeral during creation and never persisted in database profiles or client storage.
-- [x] **Team Directory View (`components/team/team-view.tsx` & `/team`)**:
-  - Displays team members in a responsive table (desktop) and card layout (mobile) with member roles, emails, and joined dates.
-  - "Add Member" button is visible exclusively to workspace Administrators.
+| Phase | Delivered |
+|---|---|
+| 1–2 | App shell, Supabase auth, profiles with ADMIN / MEMBER roles |
+| 3 | Weekly tasks (My Tasks) |
+| 4 | Shared Team Board (kanban) |
+| 5 | Weekly company goals, with task-to-goal links |
+| 6 | Weekly review: outcomes, task rollover, check-ins |
+| 7 | Insights / analytics · 7.1 admin team provisioning |
+| 8 | In-app attention centre (notifications) |
+| 8.1 | Team member deactivation and reactivation |
+| 8.2 | Team departments, preserved planning week |
+| — | Self-service password change (shipped between 8.1 and 8.2) |
+| **9** | **In progress:** cleanup (font fix, dead-code removal, docs) |
 
 ---
 
-### 🔑 Service Role Setup for Admin Team Provisioning
+## ✨ Features
 
-To enable direct in-app team creation:
-1. Open your **Supabase Dashboard** → **Project Settings** → **API**.
-2. Locate the **`service_role` (secret)** key.
-3. In your local `.env.local` file, add:
-   ```env
-   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
-   ```
-> [!CAUTION]
-> Never prefix `SUPABASE_SERVICE_ROLE_KEY` with `NEXT_PUBLIC_` and never commit it to Git. It must only be read by server-side actions.
+| Page | What it does | Who |
+|---|---|---|
+| `/dashboard` | Week at a glance: task stats, goal progress, items needing attention | everyone |
+| `/my-tasks` | Plan and update your own tasks for any week | everyone |
+| `/team-board` | Shared kanban of the team's tasks (drag, or "Move to" on mobile) | everyone; edit own tasks (admins: all) |
+| `/goals` | Weekly company goals with derived progress and risk signals | view: everyone · manage: admins |
+| `/weekly-review` | Close the week: carry forward, cancel, keep or reassign incomplete tasks; submit a check-in | everyone; admins see the team |
+| `/insights` | Multi-week execution analytics | admins: team and per member · members: own |
+| `/team` | Team directory; add, edit, deactivate and reactivate members | view: everyone · manage: admins |
+| `/settings` | Edit your name, change your password | everyone |
 
----
-
-## 📊 Phase 7 Analytics Definitions & Formulas
-
-### 1. Task Metrics
-- **Tasks Planned**: `count(tasks WHERE week_start = selected_week)`
-- **Tasks Completed**: `count(tasks WHERE week_start = selected_week AND status = 'DONE')`
-- **Completion Rate**: `(completed / planned) * 100` *(returns `null` when planned is 0)*
-- **Incomplete Tasks**: `planned - completed`
-
-### 2. Carryovers & Repeated Lineage
-- **Carryovers Out**: `count(task_weekly_reviews WHERE week_start = selected_week AND outcome IN ('CARRY_FORWARD', 'REASSIGN'))`
-- **Carryover Rate**: `(carryovers_out / incomplete_tasks) * 100` *(returns `null` when incomplete is 0)*
-- **Repeated Carryover**: A source-week review outcome of `CARRY_FORWARD` or `REASSIGN` where the source task already had `rollover_count >= 1` (meaning carrying it forward results in `rollover_count >= 2` in subsequent weeks).
-
-### 3. Blockers & Overdue Detection
-- **Blocked Tasks**: `count(tasks WHERE week_start = selected_week AND (status = 'BLOCKED' OR is_blocked = true))`
-- **Critical Blockers**: Blocked tasks where `priority = 'CRITICAL'`.
-- **Historical Overdue**: For past weeks, tasks with `status != 'DONE'` and `due_date < Sunday_end_of_week`. For the active week, `due_date < today`.
-
-### 4. Goals & Workload
-- **Goals Committed**: `count(weekly_goals WHERE week_start = selected_week)`
-- **Goals Achieved**: `count(weekly_goals WHERE week_start = selected_week AND status = 'ACHIEVED')`
-- **Goal Achievement Rate**: `(achieved / committed) * 100` *(returns `null` when committed is 0)*
-- **Average Goal Progress**: Average of derived progress across all committed goals in that week.
-- **Workload Distribution**: Per-member task counts (Planned, Done, Active, Blocked, Critical), sorted alphabetically by name.
-
-### 5. Historical Accuracy Limitations
-- Task completion metrics reflect the **current persisted task state** for that historical week.
-- OperonPulse does not use event sourcing or retrospective point-in-time state reconstruction for mutable fields; immutable review decisions are anchored in `task_weekly_reviews`.
+The header's **attention centre** surfaces overdue, blocked and at-risk work, and pending reviews and check-ins. Read and dismiss state is saved per user.
 
 ---
 
-## 🚫 Intentionally NOT Implemented (Deferred to Future Phases)
+## 🛠️ Tech stack
 
-To uphold the "Insights, not surveillance" philosophy:
-- ❌ Employee rankings, productivity scores, or leaderboards
-- ❌ AI/LLM-generated summaries or speculative diagnoses
-- ❌ Slack, WhatsApp, or email digests
-- ❌ Comments, activity feeds, and file attachments
-- ❌ Recurring automated tasks
-- ❌ External BI / Data warehouse integrations
-
----
-
-## 🛠️ Tech Stack
-
-- **Framework**: [Next.js](https://nextjs.org/) (App Router, React 19)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **Backend SDK & Auth**: [Supabase](https://supabase.com/) (`@supabase/supabase-js`, `@supabase/ssr`)
-- **Linting & Quality**: [ESLint](https://eslint.org/)
+- **Framework:** [Next.js](https://nextjs.org/) 15.5 (App Router, Server Actions), React 19
+- **Language:** TypeScript (strict)
+- **Styling:** Tailwind CSS 3, with shadcn-style theme variables in `app/globals.css`
+- **Font:** Inter via `next/font` (self-hosted at build time)
+- **Icons:** [Lucide React](https://lucide.dev/)
+- **Backend:** [Supabase](https://supabase.com/): Postgres with row-level security, plus Auth (`@supabase/supabase-js`, `@supabase/ssr`)
+- **Deployment target:** Vercel (per commit `4ac3060`; not configured in the repo)
 
 ---
 
-## 📁 Folder Architecture
+## 📁 Folder structure
 
 ```text
 ├── app/
-│   ├── (auth)/
-│   │   ├── login/page.tsx          # Login page with password visibility toggle & alerts
-│   │   └── layout.tsx              # Centered minimal authentication layout
-│   ├── (dashboard)/
-│   │   ├── dashboard/page.tsx      # Upgraded Founder Overview & live weekly metrics
-│   │   ├── my-tasks/page.tsx       # Personal Weekly Task Management with Goal & Rollover Pills
-│   │   ├── team-board/page.tsx     # Shared Team Kanban Board with Goal & Rollover Pills
-│   │   ├── goals/page.tsx          # Weekly Company Goals Workspace
-│   │   ├── weekly-review/page.tsx  # End-of-Week Review & Rollover Workspace (Phase 6)
-│   │   ├── insights/page.tsx       # Insights placeholder view
-│   │   ├── team/page.tsx           # Team directory with role badges
-│   │   ├── settings/page.tsx       # Profile & account configuration page
-│   │   └── layout.tsx              # App shell with server session retrieval
-│   ├── globals.css                 # Theme tokens, variables, and Tailwind directives
-│   ├── layout.tsx                  # Root HTML layout
-│   └── page.tsx                    # Root redirect to /dashboard
+│   ├── (auth)/login/             Login page
+│   ├── (dashboard)/              Signed-in app: layout plus one folder per page
+│   │   ├── dashboard/  my-tasks/  team-board/  goals/
+│   │   └── weekly-review/  insights/  team/  settings/
+│   ├── globals.css               Theme variables and Tailwind layers
+│   ├── layout.tsx                Root layout (metadata, Inter font)
+│   └── page.tsx                  Redirects / → /dashboard
 ├── components/
-│   ├── board/
-│   │   ├── blocker-prompt-dialog.tsx # Prompt modal for blocker description on drag to Blocked
-│   │   ├── kanban-card.tsx         # Draggable task card with priority, progress, goal & rollover pill
-│   │   ├── kanban-column.tsx       # Column drop target with header counter & empty state
-│   │   ├── task-detail-dialog.tsx  # Read-only task viewer with linked goal details
-│   │   └── team-board-view.tsx     # Client board container with drag logic, filters & mobile tabs
-│   ├── goals/
-│   │   ├── delete-goal-dialog.tsx  # Accessible confirmation modal for deleting goals
-│   │   ├── goal-card.tsx           # Goal card with progress bar, task summary & risk signals
-│   │   ├── goal-detail-dialog.tsx  # Modal displaying goal details and all linked tasks
-│   │   ├── goal-form-dialog.tsx    # Accessible create/edit goal dialog for Admins
-│   │   ├── goal-status-badge.tsx   # Color-coded badge for goal statuses
-│   │   └── goals-view.tsx          # Client container for /goals with week navigation & stats
-│   ├── reviews/
-│   │   ├── incomplete-tasks-list.tsx         # List of incomplete tasks with Review action
-│   │   ├── rollover-badge.tsx                # Subtle rollover counter pill (Carried 1x, etc.)
-│   │   ├── task-review-dialog.tsx            # Modal for review decisions (Carry, Cancel, Keep, Reassign)
-│   │   ├── team-checkin-status.tsx           # Admin roster for team check-in submission status
-│   │   ├── weekly-checkin-card.tsx           # 4-question self-reflection check-in form
-│   │   ├── weekly-execution-summary-card.tsx # Deterministic summary metrics & template text
-│   │   └── weekly-review-view.tsx            # Main client container for /weekly-review
-│   ├── layout/
-│   │   ├── header.tsx              # Top sticky header with week calculation & user avatar
-│   │   ├── mobile-nav.tsx          # Responsive mobile slide-out drawer
-│   │   └── sidebar.tsx             # Desktop sidebar with user panel & sign-out
-│   ├── tasks/
-│   │   ├── delete-task-dialog.tsx  # Confirmation dialog for deleting tasks
-│   │   ├── empty-tasks-view.tsx    # Zero-state placeholder with "+ Add Task" action
-│   │   ├── task-form-dialog.tsx    # Modal dialog with optional weekly goal selection
-│   │   ├── task-table.tsx          # Responsive table & mobile cards view with goal & rollover pills
-│   │   ├── tasks-view.tsx          # Client container with weekly metrics & navigation
-│   │   └── week-navigator.tsx      # Week navigation bar with ?week=YYYY-MM-DD state
-│   ├── settings/
-│   │   └── profile-form.tsx        # Interactive profile editor with feedback
-│   ├── shared/
-│   │   ├── page-container.tsx      # Consistent max-width container wrapper
-│   │   ├── placeholder-view.tsx    # Clean placeholder container for upcoming phases
-│   │   ├── priority-badge.tsx      # Priority indicator badge (Critical, High, etc.)
-│   │   ├── section-header.tsx      # Section heading with optional badge/action
-│   │   ├── stat-card.tsx           # Stat metric card with trend indicators
-│   │   └── status-badge.tsx        # Status badge (Not Started, In Progress, etc.)
-│   └── ui/
-│       ├── avatar.tsx              # Accessible user avatar component
-│       ├── badge.tsx               # CVA badge component
-│       ├── button.tsx              # Button component with variants
-│       ├── card.tsx                # Card structural components
-│       └── progress.tsx            # Animated progress bar
+│   ├── ui/                       Primitives: avatar, badge, button, card, progress
+│   ├── shared/                   Page container, section header, stat card, status/priority badges
+│   ├── layout/                   Sidebar, header, mobile nav
+│   ├── attention/                Attention bell, drawer and item card
+│   ├── auth/                     Cross-tab session sync
+│   ├── board/                    Team Board kanban and dialogs
+│   ├── goals/                    Goals view, cards and dialogs
+│   ├── insights/                 Insights view, charts, workload table
+│   ├── reviews/                  Weekly review, rollover, check-ins
+│   ├── settings/                 Profile form, change-password card
+│   ├── tasks/                    My Tasks view, table, form, week navigator
+│   └── team/                     Team directory and member dialogs
 ├── lib/
-│   ├── auth/
-│   │   ├── actions.ts              # Server actions: loginAction, logoutAction, updateProfile
-│   │   └── session.ts              # Server-side user session & profile retrieval
-│   ├── goals/
-│   │   ├── actions.ts              # Server actions: createGoalAction, updateGoalAction, deleteGoalAction
-│   │   ├── logic.ts                # Calculation engine: progress derivation & risk signals
-│   │   └── queries.ts              # Supabase queries: getGoalsForWeek, getGoalsWithTaskSummary, getGoalWithTasks
-│   ├── reviews/
-│   │   ├── actions.ts              # Server actions: saveWeeklyCheckinAction, recordTaskReviewAction, rolloverTaskAction
-│   │   ├── logic.ts                # Deterministic summary calculations & rollover eligibility helpers
-│   │   └── queries.ts              # Supabase queries: getWeeklyReviewData, getTaskReviewOutcomes, getWeeklyCheckin
-│   ├── tasks/
-│   │   ├── actions.ts              # Server actions: createTaskAction, updateTaskAction, updateTaskStatusAction, deleteTaskAction
-│   │   └── queries.ts              # Supabase queries: getTasksForWeek, getTeamBoardTasks, getTeamMembersList
-│   ├── data/
-│   │   └── mock-data.ts            # Fallback fixtures & static structure
-│   ├── supabase/
-│   │   ├── client.ts               # Browser Supabase client helper
-│   │   ├── middleware.ts           # SSR session refresher & route guard
-│   │   └── server.ts               # Server Supabase client helper
-│   └── utils/
-│       ├── cn.ts                   # Tailwind merge / clsx utility
-│       └── date.ts                 # Dynamic ISO week & date range calculations
-├── middleware.ts                   # Next.js edge middleware entry point
-├── supabase/
-│   └── migrations/
-│       ├── 20261004000000_create_profiles.sql              # Profiles schema, trigger, & RLS policies
-│       ├── 20261004000001_create_tasks.sql                 # Tasks table, indexes, consistency trigger, & RLS
-│       ├── 20261004000002_phase4_team_board_visibility.sql # Team-wide read visibility for Team Board
-│       ├── 20261004000003_create_weekly_goals.sql          # Weekly goals schema, task FK, triggers & RLS (Phase 5)
-│       └── 20261004000004_phase6_weekly_review.sql         # Weekly reviews, check-ins, tasks rollover fields & RPC (Phase 6)
-├── types/
-│   └── index.ts                    # TypeScript types (TaskReviewOutcome, WeeklyCheckin, DbTask, etc.)
-├── .env.example                    # Environment variable template
-├── components.json                 # shadcn/ui configuration
-├── next.config.ts                  # Next.js configuration
-├── package.json                    # Project dependencies & scripts
-├── postcss.config.mjs              # PostCSS Tailwind config
-├── tailwind.config.ts              # Tailwind theme extensions & design tokens
-└── tsconfig.json                   # TypeScript compiler configuration
+│   ├── supabase/                 Browser, server, middleware and service-role (admin) clients
+│   ├── auth/                     Login/logout/profile/password actions, guards, session
+│   ├── tasks/  goals/  reviews/  queries.ts (reads) · actions.ts (Server Actions) · logic.ts
+│   ├── insights/                 Analytics queries, pure metric logic, types
+│   ├── attention/                Attention-centre logic, queries, actions, types
+│   ├── team/                     Admin team actions, departments, ban constants
+│   ├── utils/                    date.ts (Africa/Lagos week maths), week.ts (week URLs)
+│   └── utils.ts                  cn() class-name helper
+├── supabase/migrations/          SQL migrations (run manually; see below)
+├── scripts/                      Offline test scripts (see Scripts)
+├── types/index.ts                Shared TypeScript types
+├── docs/PROJECT_OVERVIEW.md      Architecture and findings
+├── middleware.ts                 Session refresh and route protection
+├── CLAUDE.md                     Working rules
+└── .env.example                  Environment variable template
 ```
 
 ---
 
-## ⚡ Supabase Setup & Local Development
+## ⚡ Setup
 
-### 1. Configure Local Environment Variables
-Create `.env.local` in the project root:
+### 1. Environment variables
+
 ```bash
 cp .env.example .env.local
 ```
-Fill in your credentials:
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+
+| Variable | Where it's used | Notes |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | browser and server | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | browser and server | Public anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server only** (`lib/supabase/admin.ts`) | Needed for adding, editing, deactivating and reactivating members |
+
+> [!CAUTION]
+> Never prefix `SUPABASE_SERVICE_ROLE_KEY` with `NEXT_PUBLIC_`, and never commit it. Set all three in your hosting provider's environment settings for production.
+
+### 2. Database migrations
+
+Migrations are **not** applied automatically. Run them **in this order** in the Supabase Dashboard → **SQL Editor**:
+
+| # | File | Adds |
+|---|---|---|
+| 1 | [`20261004000000_create_profiles.sql`](supabase/migrations/20261004000000_create_profiles.sql) | `profiles`, sign-up trigger, role protection, RLS |
+| 2 | [`20261004000001_create_tasks.sql`](supabase/migrations/20261004000001_create_tasks.sql) | `tasks`, consistency trigger, RLS |
+| 3 | [`20261004000002_phase4_team_board_visibility.sql`](supabase/migrations/20261004000002_phase4_team_board_visibility.sql) | Team-wide task visibility |
+| 4 | [`20261004000003_create_weekly_goals.sql`](supabase/migrations/20261004000003_create_weekly_goals.sql) | `weekly_goals`, `tasks.goal_id`, week checks |
+| 5 | [`20261004000004_phase6_weekly_review.sql`](supabase/migrations/20261004000004_phase6_weekly_review.sql) | Reviews, check-ins, rollover fields, `rollover_task` RPC |
+| — | *`…000005` does not exist* | The numbering skips it; nothing is missing |
+| 6 | [`20261004000006_phase8_attention_states.sql`](supabase/migrations/20261004000006_phase8_attention_states.sql) | `attention_states` ⚠️ |
+| 7 | [`20261005000000_phase8_1_team_member_deactivation.sql`](supabase/migrations/20261005000000_phase8_1_team_member_deactivation.sql) | `profiles.is_active` |
+| 8 | [`20261012000000_add_profile_department.sql`](supabase/migrations/20261012000000_add_profile_department.sql) | `profiles.department` |
+
+> [!WARNING]
+> `20261004000006_phase8_attention_states.sql` is marked **"DO NOT RUN AUTOMATICALLY ON PRODUCTION. User approval required before execution."** Review it before running it against production.
+
+**First admin:** new users are always created as `MEMBER`. Promote the first administrator once, in the SQL Editor:
+
+```sql
+UPDATE public.profiles SET role = 'ADMIN', updated_at = now() WHERE email = 'you@example.com';
 ```
 
-### 2. Run Database Migrations
-In your Supabase Dashboard **SQL Editor**, run the migrations in sequential order:
-1. [`supabase/migrations/20261004000000_create_profiles.sql`](supabase/migrations/20261004000000_create_profiles.sql)
-2. [`supabase/migrations/20261004000001_create_tasks.sql`](supabase/migrations/20261004000001_create_tasks.sql)
-3. [`supabase/migrations/20261004000002_phase4_team_board_visibility.sql`](supabase/migrations/20261004000002_phase4_team_board_visibility.sql)
-4. [`supabase/migrations/20261004000003_create_weekly_goals.sql`](supabase/migrations/20261004000003_create_weekly_goals.sql)
-5. [`supabase/migrations/20261004000004_phase6_weekly_review.sql`](supabase/migrations/20261004000004_phase6_weekly_review.sql)
+After that, admins add teammates from `/team`.
 
-### 3. Start the Development Server
+### 3. Run locally
+
 ```bash
 npm install
 npm run dev
 ```
-Visit [http://localhost:3000/login](http://localhost:3000/login) to sign in.
+
+Open [http://localhost:3000/login](http://localhost:3000/login).
 
 ---
 
-## 🧪 Validation & Quality Checks
+## 🧪 Scripts
 
-Run the verification suite locally:
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint (`next lint`) |
+| `npm test` | Runs the offline test scripts in `scripts/`: attention, deactivation, change-password, team-creation, week-planning, department |
+
+`scripts/test-insights.mjs` exists but is **not** part of `npm test` yet. Run it directly:
+
 ```bash
-# Typecheck TypeScript
-npm run typecheck
-
-# Lint Codebase
-npm run lint
-
-# Build for Production
-npm run build
+node --experimental-strip-types scripts/test-insights.mjs
 ```
+
+Before committing, all four of typecheck, lint, test and build must pass (see `CLAUDE.md`).
+
+---
+
+## 📊 Analytics definitions
+
+### Tasks
+- **Tasks planned:** `count(tasks WHERE week_start = selected_week)`
+- **Tasks completed:** `count(tasks WHERE week_start = selected_week AND status = 'DONE')`
+- **Completion rate:** `(completed / planned) * 100`, or `null` when planned is 0
+- **Incomplete tasks:** `planned - completed`
+
+### Carryovers
+- **Carryovers out:** `count(task_weekly_reviews WHERE week_start = selected_week AND outcome IN ('CARRY_FORWARD', 'REASSIGN'))`
+- **Carryover rate:** `(carryovers_out / incomplete_tasks) * 100`, or `null` when incomplete is 0
+- **Repeated carryover:** a `CARRY_FORWARD` or `REASSIGN` outcome on a task that already had `rollover_count >= 1`
+
+### Blockers and overdue
+- **Blocked tasks:** `status = 'BLOCKED' OR is_blocked = true`
+- **Critical blockers:** blocked tasks with `priority = 'CRITICAL'`
+- **Overdue:** past weeks use `status != 'DONE' AND due_date < end of week`; the active week uses `due_date < today`
+
+### Goals and workload
+- **Goal achievement rate:** `(achieved / committed) * 100`, or `null` when committed is 0
+- **Average goal progress:** mean derived progress across that week's goals
+- **Workload distribution:** per-member counts (planned, done, active, blocked, critical), sorted alphabetically. There is deliberately no ranking.
+
+### Limitations
+- Historical task metrics reflect each task's **current** saved state. There is no event sourcing. Review decisions are immutable in `task_weekly_reviews`.
+
+---
+
+## 🚫 Intentionally not built
+
+Following the "insights, not surveillance" principle:
+
+- Employee rankings, productivity scores or leaderboards
+- AI/LLM-generated summaries or diagnoses
+- Slack, WhatsApp or email digests (notifications are in-app only)
+- Comments, activity feeds and file attachments
+- Recurring automated tasks
+- External BI / data-warehouse integrations
