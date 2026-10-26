@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   X,
+  UserCheck,
 } from "lucide-react";
 import { TaskWithAssignees, Profile, TaskStatus, statusDisplayMap, WeeklyGoal } from "@/types";
 import { WeekNavigator } from "@/components/tasks/week-navigator";
@@ -18,6 +19,7 @@ import { BlockerPromptDialog } from "./blocker-prompt-dialog";
 import { TaskDetailDialog } from "./task-detail-dialog";
 import { OpenSubtasksConfirmDialog } from "@/components/tasks/open-subtasks-confirm-dialog";
 import { computeSubtaskProgress, getOpenSubtaskCount } from "@/lib/subtasks/logic";
+import { isOwnedTask, isSupportingTask } from "@/lib/tasks/selectors";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { DeleteTaskDialog } from "@/components/tasks/delete-task-dialog";
 import { updateTaskStatusAction } from "@/lib/tasks/actions";
@@ -43,6 +45,8 @@ export function TeamBoardView({
   const [memberFilter, setMemberFilter] = React.useState<string>("ALL");
   const [priorityFilter, setPriorityFilter] = React.useState<string>("ALL");
   const [blockedOnly, setBlockedOnly] = React.useState<boolean>(false);
+  // "Mine": tasks the viewer owns plus tasks they support
+  const [mineOnly, setMineOnly] = React.useState<boolean>(false);
 
   // Mobile Active Column Tab
   const [activeMobileColumn, setActiveMobileColumn] = React.useState<TaskStatus>("IN_PROGRESS");
@@ -81,10 +85,12 @@ export function TeamBoardView({
       const matchesMember = memberFilter === "ALL" || task.owner_id === memberFilter;
       const matchesPriority = priorityFilter === "ALL" || task.priority === priorityFilter;
       const matchesBlocked = !blockedOnly || task.is_blocked || task.status === "BLOCKED";
+      const matchesMine =
+        !mineOnly || isOwnedTask(task, currentUser.id) || isSupportingTask(task, currentUser.id);
 
-      return matchesSearch && matchesMember && matchesPriority && matchesBlocked;
+      return matchesSearch && matchesMember && matchesPriority && matchesBlocked && matchesMine;
     });
-  }, [tasks, searchQuery, memberFilter, priorityFilter, blockedOnly]);
+  }, [tasks, searchQuery, memberFilter, priorityFilter, blockedOnly, mineOnly, currentUser.id]);
 
   // Group filtered tasks by status
   const columnsData: Record<TaskStatus, TaskWithAssignees[]> = React.useMemo(() => {
@@ -342,6 +348,21 @@ export function TeamBoardView({
           >
             <AlertOctagon className="h-3.5 w-3.5 text-rose-500" />
             <span>Blocked Only</span>
+          </button>
+
+          {/* Mine: owned + supporting */}
+          <button
+            type="button"
+            aria-pressed={mineOnly}
+            onClick={() => setMineOnly(!mineOnly)}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              mineOnly
+                ? "border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950/50 dark:text-violet-300"
+                : "border-stone-200 bg-stone-50/50 text-stone-600 hover:bg-stone-100 dark:border-stone-800 dark:bg-stone-950/50 dark:text-stone-400"
+            }`}
+          >
+            <UserCheck className="h-3.5 w-3.5 text-violet-500" aria-hidden="true" />
+            <span>Mine (owned + supporting)</span>
           </button>
         </div>
       </div>

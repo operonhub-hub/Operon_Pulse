@@ -17,6 +17,8 @@ import {
 import { WeekNavigator } from "@/components/tasks/week-navigator";
 import { WeeklyExecutionSummaryCard } from "./weekly-execution-summary-card";
 import { IncompleteTasksList } from "./incomplete-tasks-list";
+import { SupportingTasksReview } from "./supporting-tasks-review";
+import { isSupportingTask } from "@/lib/tasks/selectors";
 import { TaskReviewDialog } from "./task-review-dialog";
 import { WeeklyCheckinCard } from "./weekly-checkin-card";
 import { TeamCheckinStatus } from "./team-checkin-status";
@@ -45,6 +47,15 @@ export function WeeklyReviewView({
   initialSummary,
 }: WeeklyReviewViewProps) {
   const isAdmin = currentUser.role === "ADMIN";
+
+  // Members don't review tasks they only support: those move to a read-only
+  // section with the owner's outcome. Admins keep the full list (they review all).
+  const supportedIncompleteTasks = isAdmin
+    ? []
+    : initialIncompleteTasks.filter((t) => isSupportingTask(t, currentUser.id));
+  const reviewListTasks = isAdmin
+    ? initialIncompleteTasks
+    : initialIncompleteTasks.filter((t) => !isSupportingTask(t, currentUser.id));
 
   const [reviewingTask, setReviewingTask] = React.useState<TaskWithAssignees | null>(null);
 
@@ -96,7 +107,7 @@ export function WeeklyReviewView({
           <div>
             <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
               <ListTodo className="h-4 w-4 text-amber-500" />
-              <span>Incomplete Tasks for Review ({initialIncompleteTasks.length})</span>
+              <span>Incomplete Tasks for Review ({reviewListTasks.length})</span>
             </h3>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
               Select an outcome for each unfinished item: Carry forward, cancel, or keep in week.
@@ -105,12 +116,15 @@ export function WeeklyReviewView({
         </div>
 
         <IncompleteTasksList
-          tasks={initialIncompleteTasks}
+          tasks={reviewListTasks}
           currentUserId={currentUser.id}
           currentUserRole={currentUser.role}
           onReviewTask={(task) => setReviewingTask(task)}
         />
       </div>
+
+      {/* 2b. Tasks the user supports: owner's outcomes, read-only */}
+      <SupportingTasksReview tasks={supportedIncompleteTasks} />
 
       {/* 3. Check-ins Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

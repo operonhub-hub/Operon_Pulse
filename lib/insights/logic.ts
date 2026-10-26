@@ -1,10 +1,12 @@
-import {
+import type {
   DbTask,
   WeeklyGoal,
   TaskWeeklyReview,
   Profile,
 } from "@/types";
-import {
+import type {
+  MemberSupportSummary,
+  TeamContributionTotals,
   WeeklyTaskMetric,
   WeeklyGoalMetric,
   WeeklyCarryoverMetric,
@@ -15,7 +17,8 @@ import {
   InsightsOverviewStats,
   WeekOverWeekComparison,
 } from "./types";
-import { formatWeekLabelFromMonday } from "@/lib/utils/date";
+import { formatWeekLabelFromMonday } from "../utils/date.ts";
+import { isSupportingTask } from "../tasks/selectors.ts";
 
 /**
  * Calculates percentage completion rate (0-100) or returns null if no planned items.
@@ -314,6 +317,16 @@ export function buildWorkloadMetrics(tasks: DbTask[], profiles: Profile[]): Work
     }
   });
 
+  // Support credit is attributed separately and never changes owner metrics
+  const memberSupportMap = new Map<string, DbTask[]>();
+  profiles.forEach((p) => memberSupportMap.set(p.id, []));
+  tasks.forEach((t) => {
+    const supporter = t.support_person_id;
+    if (supporter && memberSupportMap.has(supporter) && isSupportingTask(t, supporter)) {
+      memberSupportMap.get(supporter)!.push(t);
+    }
+  });
+
   const sortedProfiles = [...profiles].sort((a, b) => {
     const nameA = (a.full_name || a.email || "").toLowerCase();
     const nameB = (b.full_name || b.email || "").toLowerCase();
@@ -330,6 +343,7 @@ export function buildWorkloadMetrics(tasks: DbTask[], profiles: Profile[]): Work
       (t) => (t.status === "BLOCKED" || t.is_blocked) && t.priority === "CRITICAL"
     ).length;
     const completionRate = calculateCompletionRate(completed, planned);
+    const support = summarizeSupport(memberSupportMap.get(p.id) || []);
 
     return {
       memberId: p.id,
@@ -342,6 +356,10 @@ export function buildWorkloadMetrics(tasks: DbTask[], profiles: Profile[]): Work
       blocked,
       critical,
       completionRate,
+      supported: support.supported,
+      supportedCompleted: support.supportedCompleted,
+      supportCompletionRate: support.supportCompletionRate,
+      contributions: calculateContributions(completed, support.supportedCompleted),
     };
   });
 }
@@ -574,4 +592,77 @@ export function generateInsightSignals(
   }
 
   return signals;
+}
+
+// ---------------------------------------------------------------------------
+// Support metrics & contributions
+// ---------------------------------------------------------------------------
+
+type SupportTask = Pick<DbTask, "id" | "owner_id" | "support_person_id" | "status">;
+
+function summarizeSupport(supportedTasks: SupportTask[]) {
+  const supported = supportedTasks.length;
+  const supportedCompleted = supportedTasks.filter((t) => t.status === "DONE").length;
+  return {
+    supported,
+    supportedCompleted,
+    supportCompletionRate: calculateCompletionRate(supportedCompleted, supported),
+  };
+}
+
+/** Contributions = owned completed + supported completed. */
+export function calculateContributions(ownedCompleted: number, supportedCompleted: number): number {
+  return ownedCompleted + supportedCompleted;
+}
+
+/**
+ * Support metrics for one member. `tasks` may include any tasks; only those the
+ * member owns or supports (support != owner) are counted, each task once.
+ */
+export function buildMemberSupportSummary(
+  tasks: readonly SupportTask[],
+  memberId: string
+): MemberSupportSummary {
+  const unique = dedupeById(tasks);
+  const supportedTasks = unique.filter((t) => isSupportingTask(t, memberId));
+  const ownedCompleted = unique.filter((t) => t.owner_id === memberId && t.status === "DONE").length;
+  const support = summarizeSupport(supportedTasks);
+  return {
+    memberId,
+    ...support,
+    ownedCompleted,
+    contributions: calculateContributions(ownedCompleted, support.supportedCompleted),
+  };
+}
+
+/**
+ * Team totals that count each task exactly once. `memberContributions` are the
+ * per-member contribution numbers (e.g. from buildWorkloadMetrics), reported
+ * separately as their sum, which double-counts owned+supported tasks by design.
+ */
+export function buildTeamContributionTotals(
+  tasks: readonly SupportTask[],
+  memberContributions: readonly number[] = []
+): TeamContributionTotals {
+  const unique = dedupeById(tasks);
+  const hasDistinctSupport = (t: SupportTask) => !!t.support_person_id && t.support_person_id !== t.owner_id;
+  const completed = unique.filter((t) => t.status === "DONE");
+  return {
+    completedTasks: completed.length,
+    completedWithSupport: completed.filter(hasDistinctSupport).length,
+    supportedTasks: unique.filter(hasDistinctSupport).length,
+    sumOfMemberContributions: memberContributions.reduce((sum, n) => sum + n, 0),
+  };
+}
+
+function dedupeById<T extends { id: string }>(tasks: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const t of tasks) {
+    if (!seen.has(t.id)) {
+      seen.add(t.id);
+      out.push(t);
+    }
+  }
+  return out;
 }

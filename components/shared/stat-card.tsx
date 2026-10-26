@@ -10,7 +10,7 @@ interface StatCardProps {
   icon?: LucideIcon;
   change?: string;
   changeType?: "positive" | "negative" | "neutral";
-  accentColor?: "default" | "amber" | "emerald" | "blue" | "rose";
+  accentColor?: "default" | "amber" | "emerald" | "blue" | "rose" | "violet";
   className?: string;
 }
 
@@ -20,6 +20,7 @@ const accentDotMap = {
   emerald: "bg-emerald-500",
   blue: "bg-blue-500",
   rose: "bg-rose-500",
+  violet: "bg-violet-500", // support work
 };
 
 export function StatCard({

@@ -11,6 +11,7 @@ import { GoalExecutionChart } from "./goal-execution-chart";
 import { WorkloadTable } from "./workload-table";
 import { InsightSignals } from "./insight-signals";
 import { MemberInsightsView } from "./member-insights-view";
+import { SupportSummaryCard } from "./support-summary-card";
 import { BarChart3, Info } from "lucide-react";
 
 interface InsightsViewProps {
@@ -93,6 +94,11 @@ export function InsightsView({ dataset }: InsightsViewProps) {
             comparison={comparison}
           />
 
+          {/* 1b. Support work for the filtered member */}
+          {isMemberFiltered && dataset.supportSummary && (
+            <SupportSummaryCard summary={dataset.supportSummary} memberLabel={filteredMemberName || "This member"} />
+          )}
+
           {/* 2. Attention Signals */}
           <InsightSignals signals={signals} />
 
@@ -115,7 +121,7 @@ export function InsightsView({ dataset }: InsightsViewProps) {
           <GoalExecutionChart data={weeklyGoals} />
 
           {/* 6. Section 7: Workload Distribution Table (Admin only) */}
-          <WorkloadTable workload={workload} />
+          <WorkloadTable workload={workload} teamTotals={dataset.teamTotals} />
         </div>
       )}
     </div>

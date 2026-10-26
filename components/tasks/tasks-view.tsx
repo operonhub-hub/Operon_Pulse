@@ -17,6 +17,9 @@ import { EmptyTasksView } from "@/components/tasks/empty-tasks-view";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { DeleteTaskDialog } from "@/components/tasks/delete-task-dialog";
 import { Button } from "@/components/ui/button";
+import { SupportingTasksSection } from "@/components/tasks/supporting-tasks-section";
+import { TaskDetailDialog } from "@/components/board/task-detail-dialog";
+import { selectSupportingTasks } from "@/lib/tasks/selectors";
 
 interface TasksViewProps {
   initialTasks: TaskWithAssignees[];
@@ -38,6 +41,7 @@ export function TasksView({
   const [editingTask, setEditingTask] = React.useState<TaskWithAssignees | null>(null);
   const [deletingTask, setDeletingTask] = React.useState<TaskWithAssignees | null>(null);
   const [adminScope, setAdminScope] = React.useState<"ALL" | "MINE">("ALL");
+  const [viewingTask, setViewingTask] = React.useState<TaskWithAssignees | null>(null);
 
   // Keep state synced with server props when navigation or revalidation occurs
   React.useEffect(() => {
@@ -53,6 +57,12 @@ export function TasksView({
     }
     return tasks;
   }, [tasks, isAdmin, adminScope, currentUser.id]);
+
+  // Tasks the user supports but doesn't own (shown separately, read-only)
+  const supportingTasks = React.useMemo(
+    () => selectSupportingTasks(tasks, currentUser.id),
+    [tasks, currentUser.id]
+  );
 
   // Weekly Execution Metrics
   const stats = React.useMemo(() => {
@@ -199,6 +209,20 @@ export function TasksView({
           currentUserRole={currentUser.role}
           onEditTask={(task) => setEditingTask(task)}
           onDeleteTask={(task) => setDeletingTask(task)}
+        />
+      )}
+
+      {/* Tasks the user supports */}
+      <SupportingTasksSection tasks={supportingTasks} onOpenTask={setViewingTask} />
+
+      {/* Read-only detail view for supported tasks (subtask checklist stays tickable) */}
+      {viewingTask && (
+        <TaskDetailDialog
+          isOpen={!!viewingTask}
+          onClose={() => setViewingTask(null)}
+          task={viewingTask}
+          currentUserId={currentUser.id}
+          currentUserRole={currentUser.role}
         />
       )}
 

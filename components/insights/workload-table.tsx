@@ -1,23 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { WorkloadMetric } from "@/lib/insights/types";
+import { TeamContributionTotals, WorkloadMetric } from "@/lib/insights/types";
 import { Users, User, ArrowUpDown } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 
 interface WorkloadTableProps {
   workload: WorkloadMetric[];
+  teamTotals?: TeamContributionTotals | null;
 }
 
-export function WorkloadTable({ workload }: WorkloadTableProps) {
-  const [sortBy, setSortBy] = useState<"name" | "planned" | "active" | "blocked">("name");
+type SortField = "name" | "planned" | "active" | "blocked" | "supported" | "contributions";
+
+export function WorkloadTable({ workload, teamTotals }: WorkloadTableProps) {
+  const [sortBy, setSortBy] = useState<SortField>("name");
   const [sortAsc, setSortAsc] = useState(true);
 
   if (!workload || workload.length === 0) {
     return null;
   }
 
-  const handleSort = (field: "name" | "planned" | "active" | "blocked") => {
+  const handleSort = (field: SortField) => {
     if (sortBy === field) {
       setSortAsc(!sortAsc);
     } else {
@@ -98,6 +101,28 @@ export function WorkloadTable({ workload }: WorkloadTableProps) {
               </th>
               <th className="p-3 font-medium">Critical</th>
               <th className="p-3 font-medium">Completion Rate</th>
+              {/* Support columns (secondary colour) */}
+              <th
+                onClick={() => handleSort("supported")}
+                className="p-3 font-medium bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200 cursor-pointer select-none border-l border-violet-200 dark:border-violet-900"
+              >
+                <div className="flex items-center gap-1">
+                  <span>Supported</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
+              <th className="p-3 font-medium bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200">Supp. Done</th>
+              <th className="p-3 font-medium bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200">Supp. Rate</th>
+              <th
+                onClick={() => handleSort("contributions")}
+                className="p-3 font-medium bg-violet-50 text-violet-800 dark:bg-violet-950/40 dark:text-violet-200 cursor-pointer select-none"
+                title="Owned completed + supported completed"
+              >
+                <div className="flex items-center gap-1">
+                  <span>Contributions</span>
+                  <ArrowUpDown className="w-3 h-3" />
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -139,9 +164,34 @@ export function WorkloadTable({ workload }: WorkloadTableProps) {
                 <td className="p-3 font-medium text-foreground">
                   {m.completionRate !== null ? `${m.completionRate}%` : "—"}
                 </td>
+                <td className="p-3 bg-violet-50/40 text-violet-800 font-semibold border-l border-violet-200 dark:bg-violet-950/20 dark:text-violet-300 dark:border-violet-900">
+                  {m.supported}
+                </td>
+                <td className="p-3 bg-violet-50/40 text-violet-700 dark:bg-violet-950/20 dark:text-violet-300">
+                  {m.supportedCompleted}
+                </td>
+                <td className="p-3 bg-violet-50/40 text-violet-700 dark:bg-violet-950/20 dark:text-violet-300">
+                  {m.supportCompletionRate !== null ? `${m.supportCompletionRate}%` : "—"}
+                </td>
+                <td className="p-3 bg-violet-50/40 font-bold text-violet-900 dark:bg-violet-950/20 dark:text-violet-100">
+                  {m.contributions}
+                </td>
               </tr>
             ))}
           </tbody>
+          {teamTotals && (
+            <tfoot className="border-t-2 border-border bg-muted/40 text-[11px]">
+              <tr>
+                <td colSpan={12} className="p-3 text-muted-foreground">
+                  <span className="font-semibold text-foreground">Team totals (each task counted once):</span>{" "}
+                  {teamTotals.completedTasks} tasks completed, of which {teamTotals.completedWithSupport} had a
+                  support person. {teamTotals.supportedTasks} tasks had support in total. Member contributions add
+                  up to {teamTotals.sumOfMemberContributions} because a supported task credits both its owner and
+                  its supporter.
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
 
@@ -159,6 +209,21 @@ export function WorkloadTable({ workload }: WorkloadTableProps) {
               <span className="px-1.5 py-0.5 text-[10px] rounded bg-muted border border-border">
                 {m.role}
               </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 rounded-md bg-violet-50/60 p-2 text-center dark:bg-violet-950/20">
+              <div>
+                <span className="text-[10px] text-violet-700 block dark:text-violet-300">Supported</span>
+                <span className="font-bold text-violet-800 dark:text-violet-200">{m.supported}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-violet-700 block dark:text-violet-300">Supp. Done</span>
+                <span className="font-bold text-violet-800 dark:text-violet-200">{m.supportedCompleted}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-violet-700 block dark:text-violet-300">Contributions</span>
+                <span className="font-bold text-violet-900 dark:text-violet-100">{m.contributions}</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-4 gap-2 pt-1 border-t border-border text-center">

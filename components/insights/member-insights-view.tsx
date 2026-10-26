@@ -8,6 +8,7 @@ import { CarryoverTrendChart } from "./carryover-trend-chart";
 import { BlockerTrendChart } from "./blocker-trend-chart";
 import { InsightSignals } from "./insight-signals";
 import { Target, CheckCircle2 } from "lucide-react";
+import { SupportSummaryCard } from "./support-summary-card";
 
 interface MemberInsightsViewProps {
   dataset: InsightsDataset;
@@ -23,12 +24,16 @@ export function MemberInsightsView({ dataset }: MemberInsightsViewProps) {
     comparison,
     signals,
     contributedGoals,
+    supportSummary,
   } = dataset;
 
   return (
     <div className="space-y-6">
       {/* 1. Overview Metric Stats & WoW Banner */}
       <InsightsOverview stats={overviewStats} comparison={comparison} />
+
+      {/* 1b. Support work (separate from owner metrics) */}
+      {supportSummary && <SupportSummaryCard summary={supportSummary} />}
 
       {/* 2. Attention Signals */}
       <InsightSignals signals={signals} />

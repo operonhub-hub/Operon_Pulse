@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   TrendingUp,
   LayoutGrid,
+  HeartHandshake,
 } from "lucide-react";
 import { PageContainer } from "@/components/shared/page-container";
 import { SectionHeader } from "@/components/shared/section-header";
@@ -30,6 +31,8 @@ import { getGoalsWithTaskSummary } from "@/lib/goals/queries";
 import { calculateOverallGoalProgress } from "@/lib/goals/logic";
 import { getCurrentUserAttentionCenterData } from "@/lib/attention/queries";
 import { priorityDisplayMap, statusDisplayMap } from "@/types";
+import { selectSupportingTasks } from "@/lib/tasks/selectors";
+import { SupportingBadge } from "@/components/shared/supporting-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +58,10 @@ export default async function DashboardPage() {
     (t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW"
   ).length;
   const liveBlocked = liveTasks.filter((t) => t.is_blocked || t.status === "BLOCKED").length;
+
+  // Tasks the current user supports (owned by someone else)
+  const supportingTasks = selectSupportingTasks(liveTasks, session.user?.id);
+  const supportingCompleted = supportingTasks.filter((t) => t.status === "DONE").length;
 
   // Compute live goal metrics
   const hasLiveGoals = liveGoals.length > 0;
@@ -272,6 +279,56 @@ export default async function DashboardPage() {
               />
             );
           })}
+        </div>
+      </div>
+
+      {/* 3b. Supporting: tasks the user supports for teammates */}
+      <div className="space-y-3">
+        <SectionHeader
+          title="Supporting"
+          description="Teammates' tasks where you are the support person"
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="Supporting"
+            value={`${supportingTasks.length} ${supportingTasks.length === 1 ? "task" : "tasks"}`}
+            change={`${supportingCompleted} completed`}
+            changeType="neutral"
+            icon={HeartHandshake}
+            accentColor="violet"
+          />
+          <Card className="lg:col-span-3 border-violet-200/70 dark:border-violet-900/60">
+            <CardContent className="p-0">
+              {supportingTasks.length === 0 ? (
+                <p className="p-5 text-center text-xs text-stone-500">
+                  You aren&apos;t supporting any tasks this week.
+                </p>
+              ) : (
+                <ul className="divide-y divide-stone-100 dark:divide-stone-800">
+                  {supportingTasks.slice(0, 5).map((task) => (
+                    <li key={task.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-xs">
+                      <SupportingBadge compact />
+                      <span className="min-w-0 flex-1 truncate font-semibold text-stone-900 dark:text-stone-100">
+                        {task.title}
+                      </span>
+                      <span className="text-stone-500">
+                        {task.owner?.full_name || task.owner?.email || "Unknown owner"}
+                      </span>
+                      <StatusBadge status={statusDisplayMap[task.status]} />
+                      <span className="w-10 text-right font-semibold text-stone-700 dark:text-stone-300">
+                        {task.progress}%
+                      </span>
+                    </li>
+                  ))}
+                  <li className="px-5 py-2.5 text-right">
+                    <Link href="/my-tasks" className="text-[11px] font-semibold text-violet-700 hover:underline">
+                      View all in My Tasks →
+                    </Link>
+                  </li>
+                </ul>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
 

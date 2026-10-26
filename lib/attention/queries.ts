@@ -19,6 +19,7 @@ import {
   buildCheckinAttention,
   buildGoalAttention,
   buildAdminAggregateAttention,
+  buildSupportTaskAttention,
   mergeAttentionState,
   calculateAttentionSummary,
 } from "./logic";
@@ -106,6 +107,7 @@ export async function getUserAttentionCenterData(
     // -------------------------------------------------------------
     // MEMBER SCOPE: Strictly personal data queries
     // -------------------------------------------------------------
+    const supportedTasksPromise = fetchSupportedCurrentTasks(supabase, userId, currentWeekStart);
     const [
       stateMap,
       userCurrentTasksRes,
@@ -163,10 +165,13 @@ export async function getUserAttentionCenterData(
       isCheckinDay
     );
 
+    const supportItems = buildSupportTaskAttention(await supportedTasksPromise, userId, todayStr);
+
     const rawItems: AttentionItem[] = [
       ...taskItems,
       ...reviewItems,
       ...checkinItems,
+      ...supportItems,
     ];
 
     const mergedItems = mergeAttentionState(rawItems, stateMap);
@@ -229,6 +234,11 @@ export async function getUserAttentionCenterData(
   ]);
 
   const adminPersonalTasks = (adminPersonalTasksRes.data as DbTask[]) || [];
+  const adminSupportItems = buildSupportTaskAttention(
+    await fetchSupportedCurrentTasks(supabase, userId, currentWeekStart),
+    userId,
+    todayStr
+  );
   const adminPrevIncompleteTasks = (adminPrevTasksRes.data as DbTask[]) || [];
   const allPrevReviews = (allPrevReviewsRes.data as TaskWeeklyReview[]) || [];
   const adminCheckin = (adminCheckinRes.data as WeeklyCheckin) || null;
@@ -293,8 +303,24 @@ export async function getUserAttentionCenterData(
     ...personalCheckinItems,
     ...goalItems,
     ...adminAggregateItems,
+    ...adminSupportItems,
   ];
 
   const mergedItems = mergeAttentionState(rawItems, stateMap);
   return calculateAttentionSummary(mergedItems);
+}
+
+/** Current-week tasks the user supports but doesn't own (empty on error). */
+async function fetchSupportedCurrentTasks(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  userId: string,
+  currentWeekStart: string
+): Promise<DbTask[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("support_person_id", userId)
+    .neq("owner_id", userId)
+    .eq("week_start", currentWeekStart);
+  return error ? [] : ((data as DbTask[]) || []);
 }

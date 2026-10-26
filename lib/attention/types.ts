@@ -12,7 +12,10 @@ export type AttentionType =
   | "GOAL_OFF_TRACK"
   | "ADMIN_CRITICAL_BLOCKERS"
   | "ADMIN_CHECKINS_PENDING"
-  | "ADMIN_REVIEWS_PENDING";
+  | "ADMIN_REVIEWS_PENDING"
+  // Supporter items: tasks where the user is the support person (not the owner)
+  | "SUPPORT_TASK_BLOCKED"
+  | "SUPPORT_TASK_OVERDUE";
 
 export type AttentionSeverity = "INFO" | "WARNING" | "CRITICAL";
 

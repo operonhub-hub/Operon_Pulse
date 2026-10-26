@@ -18,6 +18,8 @@ import {
   buildInsightsOverviewStats,
   buildWeekOverWeekComparison,
   generateInsightSignals,
+  buildMemberSupportSummary,
+  buildTeamContributionTotals,
 } from "./logic";
 import { getMondayDateString } from "@/lib/utils/date";
 
@@ -210,6 +212,24 @@ export async function getInsightsDataset(
     allRangeTasks = (teamTasksData as DbTask[]) || [];
   }
 
+  // Support tasks for the viewed member. Admins already have every task in range;
+  // members get one extra query. Owner metrics above never use these.
+  let supportScopeTasks: DbTask[] = [];
+  if (effectiveMemberId) {
+    if (isAdmin) {
+      supportScopeTasks = allRangeTasks;
+    } else {
+      const { data: supportedData } = await supabase
+        .from("tasks")
+        .select("*")
+        .eq("support_person_id", effectiveMemberId)
+        .neq("owner_id", effectiveMemberId)
+        .gte("week_start", fromDate)
+        .lte("week_start", toDate);
+      supportScopeTasks = [...tasks, ...((supportedData as DbTask[]) || [])];
+    }
+  }
+
   // Execute pure metric calculations
   const weeklyTasks = buildWeeklyTaskMetrics(tasks, weeks, currentWeekMonday);
   const weeklyGoals = buildWeeklyGoalMetrics(goals, tasks, weeks);
@@ -218,6 +238,15 @@ export async function getInsightsDataset(
   // Workload is strictly for ADMIN only (empty array for MEMBER), calculated for active team members
   const activeMembers = teamMembers.filter((m) => m.is_active !== false);
   const workload = isAdmin ? buildWorkloadMetrics(allRangeTasks, activeMembers) : [];
+  const supportSummary = effectiveMemberId
+    ? buildMemberSupportSummary(supportScopeTasks, effectiveMemberId)
+    : null;
+  const teamTotals = isAdmin
+    ? buildTeamContributionTotals(
+        allRangeTasks,
+        workload.map((w) => w.contributions)
+      )
+    : null;
   const overviewStats = buildInsightsOverviewStats(weeklyTasks, weeklyGoals, weeklyCarryovers);
   const comparison = buildWeekOverWeekComparison(weeklyTasks, weeklyGoals, weeklyCarryovers, weeklyBlockers);
   const signals = generateInsightSignals(weeklyTasks, weeklyCarryovers, weeklyBlockers, recurringBlockers);
@@ -250,5 +279,7 @@ export async function getInsightsDataset(
     signals,
     teamMembers,
     contributedGoals,
+    supportSummary,
+    teamTotals,
   };
 }

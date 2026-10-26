@@ -11,6 +11,7 @@ import type {
   DbAttentionState,
   AttentionCenterData,
 } from "./types";
+import { isSupportingTask } from "../tasks/selectors.ts";
 
 /**
  * Checks whether an active task is past its due date (due_date < todayStr).
@@ -400,6 +401,13 @@ export function mergeAttentionState(
 
   // Deterministic sorting
   return merged.sort((a, b) => {
+    // 0. Owner items always rank above supporter items
+    const tierA = isSupportAttention(a) ? 1 : 0;
+    const tierB = isSupportAttention(b) ? 1 : 0;
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
     // 1. Severity weight descending
     const weightA = severityWeight[a.severity] || 0;
     const weightB = severityWeight[b.severity] || 0;
@@ -434,4 +442,69 @@ export function calculateAttentionSummary(items: AttentionItem[]): AttentionCent
     warningCount,
     infoCount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Supporter attention
+// ---------------------------------------------------------------------------
+
+export function isSupportAttention(item: Pick<AttentionItem, "type">): boolean {
+  return item.type === "SUPPORT_TASK_BLOCKED" || item.type === "SUPPORT_TASK_OVERDUE";
+}
+
+/**
+ * Attention for tasks the user supports (and doesn't own): blocked and overdue.
+ * Informational and dismissible: they never raise the user's critical/warning
+ * counts, and mergeAttentionState ranks them below every owner item.
+ */
+export function buildSupportTaskAttention(
+  tasks: (DbTask | TaskWithAssignees)[],
+  supporterId: string,
+  todayStr: string
+): AttentionItem[] {
+  const items: AttentionItem[] = [];
+
+  for (const task of tasks) {
+    if (task.status === "DONE" || !isSupportingTask(task, supporterId)) {
+      continue;
+    }
+
+    if (isTaskBlocked(task)) {
+      items.push({
+        key: `support-blocked:${task.id}`,
+        type: "SUPPORT_TASK_BLOCKED",
+        severity: "INFO",
+        title: "Task you support is blocked",
+        description: task.blocker_reason
+          ? `"${task.title}" — ${task.blocker_reason}`
+          : `"${task.title}" is marked as blocked`,
+        href: "/my-tasks",
+        contextDate: task.due_date || undefined,
+        isRead: false,
+        isDismissed: false,
+        dismissible: true,
+        entityId: task.id,
+        meta: { role: "support" },
+      });
+    }
+
+    if (isTaskOverdue(task, todayStr)) {
+      items.push({
+        key: `support-overdue:${task.id}:${task.due_date}`,
+        type: "SUPPORT_TASK_OVERDUE",
+        severity: "INFO",
+        title: "Task you support is overdue",
+        description: `"${task.title}" was due on ${task.due_date}`,
+        href: "/my-tasks",
+        contextDate: task.due_date || undefined,
+        isRead: false,
+        isDismissed: false,
+        dismissible: true,
+        entityId: task.id,
+        meta: { role: "support" },
+      });
+    }
+  }
+
+  return items;
 }

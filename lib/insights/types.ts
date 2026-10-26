@@ -61,12 +61,45 @@ export interface WorkloadMetric {
   memberName: string;
   avatarUrl: string | null;
   role: string;
+  // Owner metrics (unchanged)
   planned: number;
   completed: number;
   active: number;
   blocked: number;
   critical: number;
   completionRate: number | null;
+  // Support metrics (tasks where the member is support person, not owner)
+  supported: number;
+  supportedCompleted: number;
+  supportCompletionRate: number | null;
+  /** owned completed + supported completed */
+  contributions: number;
+}
+
+/** Support activity for one member over the selected range. */
+export interface MemberSupportSummary {
+  memberId: string;
+  supported: number;
+  supportedCompleted: number;
+  supportCompletionRate: number | null;
+  ownedCompleted: number;
+  /** owned completed + supported completed */
+  contributions: number;
+}
+
+/**
+ * Team-level totals. Every task counts exactly once, even when one member owns it
+ * and another supports it (so the sum of member contributions can be larger).
+ */
+export interface TeamContributionTotals {
+  /** Distinct completed tasks in range. */
+  completedTasks: number;
+  /** Distinct completed tasks that had a (different) support person. */
+  completedWithSupport: number;
+  /** Distinct tasks with a (different) support person. */
+  supportedTasks: number;
+  /** Sum of every member's contributions (double-counts supported tasks by design). */
+  sumOfMemberContributions: number;
 }
 
 export interface InsightSignal {
@@ -115,4 +148,8 @@ export interface InsightsDataset {
   signals: InsightSignal[];
   teamMembers: Profile[];
   contributedGoals?: WeeklyGoal[];
+  /** Support metrics for the viewed member (self for members, filtered member for admins). */
+  supportSummary: MemberSupportSummary | null;
+  /** Admin team view only. */
+  teamTotals: TeamContributionTotals | null;
 }

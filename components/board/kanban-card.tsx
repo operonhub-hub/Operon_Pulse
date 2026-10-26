@@ -20,6 +20,8 @@ import {
 } from "@/types";
 import { Progress } from "@/components/ui/progress";
 import { RolloverBadge } from "@/components/reviews/rollover-badge";
+import { SupportingBadge } from "@/components/shared/supporting-badge";
+import { isSupportingTask } from "@/lib/tasks/selectors";
 import { SubtaskCounter } from "@/components/tasks/subtask-counter";
 
 interface KanbanCardProps {
@@ -105,6 +107,7 @@ export function KanbanCard({
             rolloverCount={task.rollover_count}
             rolloverNote={task.rollover_note}
           />
+          {isSupportingTask(task, currentUserId) && <SupportingBadge />}
           {isOverdue && (
             <span className="inline-flex items-center gap-1 rounded-md bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950 dark:text-rose-400">
               <Clock className="h-2.5 w-2.5" /> Overdue
